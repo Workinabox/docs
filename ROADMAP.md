@@ -9,7 +9,7 @@ When an item is done, overwrite it in place — do not remove it. The numbering 
 1. Design and build the public-facing website of workinabox
 2. Host the website
 3. CI/CD for the website
-4. Website reachable at workinabox.ai and workinabox.io
+4. Website reachable at workinabox.ai (canonical apex; workinabox.io redirects to it)
 5. Workinabox can host git repos
 6. Workinabox has a pipeline/actions system (GitHub Actions–style)
 7. Design a Workinabox project management system (epics, stories, tasks, etc., Notion-style) before building it
