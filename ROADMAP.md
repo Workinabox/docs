@@ -10,7 +10,11 @@ When an item is done, overwrite it in place — do not remove it. The numbering 
 2. Host the website
 3. CI/CD for the website
 4. Website reachable at workinabox.ai (canonical apex; workinabox.io redirects to it)
-5. Workinabox can host git repos
+5. Workinabox can host git repos — DONE. Each `Repo` aggregate maps to a bare repo
+   under `WIAB_GIT_ROOT`. `git2` powers a REST browse/commit API; real `git
+   clone`/`fetch`/`push` is served over Smart-HTTP and SSH by spawning the system
+   `git`. Push + the write API are gated by a per-repo push token. (`git_http.rs`,
+   `git_ssh.rs`, `git2_backend.rs`; `GitBackend` port in `wiab-core`.)
 6. Workinabox has a pipeline/actions system (GitHub Actions–style)
 7. Design a Workinabox project management system (epics, stories, tasks, etc., Notion-style) before building it
 8. Self-host workinabox and start using it to build workinabox
