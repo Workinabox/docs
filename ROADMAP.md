@@ -47,3 +47,19 @@ When an item is done, overwrite it in place — do not remove it. The numbering 
 35. Memory consolidation across episodic, semantic, and procedural stores
 36. Return to meetings: capture, transcription, and event extraction feeding the agent model
 37. Voice-first UX in the mobile app on top of the meeting and agent stacks
+38. ML models must be a hard, fail-fast dependency — not silently disabled.
+    Today the backend silently degrades when model files are absent: meeting
+    intelligence falls back to `heuristic` when `WIAB_MEETING_INTELLIGENCE`
+    is unset, and transcription returns no-op when `WIAB_WHISPER_MODEL_PATH`
+    is unset/missing (`transcription.rs`, `bootstrap.rs::load_meeting_intelligence`).
+    The deployed VM runs this way unknowingly. Required:
+    - The binary must FAIL TO START if a required model env var is unset or the
+      model file is missing (no silent fallback). Remove the silent defaults.
+    - The model file is a deployment dependency that travels with the binary
+      (fetched at provision/package time to a fixed path, e.g. `/var/lib/wiab/models/`).
+    - Fix `backend/README.md` (and `.github/AGENTS.md`) which currently document
+      the disable-by-default behavior as if intended.
+    - OPEN DECISION (later): where the model files are fetched from. Options:
+      Hugging Face direct URL (pin revision + checksum; gemma is gated → needs an
+      HF token, TinyLlama/Qwen/whisper-ggml are open), a dedicated GitHub release
+      asset used as a permanent bucket (≤2 GB/file), or our own object storage.
