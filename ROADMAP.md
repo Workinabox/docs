@@ -21,15 +21,39 @@ When an item is done, overwrite it in place — do not remove it. The numbering 
 9. CI runs build, test, fmt, and clippy on every PR across all repos
 10. One-command local dev bootstrap (backend + app + dev tooling)
 11. Backend produces a versioned, reproducible container image in CI
-12. Postgres persistence behind the existing repository traits
-13. Database migration tooling and a migration test in CI
+12. Postgres persistence behind the existing repository traits — DONE. Every aggregate
+    has a `Postgres*Repository` behind its trait (deadpool-postgres + tokio-postgres),
+    selected at boot by `WIAB_PERSISTENCE` (default `postgres`; `memory` for tests).
+    (`pg_pool.rs`, `postgres_*_repository.rs`, `repository_dispatch.rs`.)
+13. Database migration tooling and a migration test in CI — DONE. refinery embeds the
+    SQL and applies it on boot (`pg_pool::run_migrations`; authbox runs its own series in a
+    separate history table). The CI `test` job now provisions a `postgres:16` service and
+    runs `postgres_integration` against it — applying **both** series (host V1–V11 + authbox
+    V1–V3) idempotently against a fresh DB and exercising the repos — alongside the Mailpit
+    and mock-OIDC integration tests against service containers. (`.github/workflows/ci.yml`,
+    `wiab-inf/tests/postgres_integration.rs`.)
 14. Structured logging with correlation IDs threaded through every crate
 15. OpenTelemetry tracing wired from inbound request to outbound call
 16. Single staging environment reachable from a public URL
 17. Infrastructure-as-code for the staging environment
 18. Secrets management (no secrets in repo, fetched at boot)
-19. Identity provider chosen and integrated for human users
-20. Authorization model: roles, scopes, and a middleware that enforces them
+19. Identity provider chosen and integrated for human users — DONE. Built in-house
+    (no external IdP; data in our own Postgres) as the reusable `authbox` crate set
+    (`authbox-core`/`-app`/`-inf`): local email/password login (argon2id) with
+    server-side browser sessions, "Continue with Google" and inbound **enterprise
+    OIDC/SSO** federation (authorization-code + PKCE, JWKS-validated ID tokens),
+    forgotten-password reset, admin invite, self-service signup with email verification,
+    and user deactivate/activate. Decoupled from WIAB's `User` via a `UserDirectory` port
+    so the same crate serves truthdb. Full write-up in `docs/AUTH-DOCS.md`. (`authbox-*`;
+    `wiab-inf/http_api.rs` `/auth/*`; `bootstrap.rs` wiring.)
+20. Authorization model: roles, scopes, and a middleware that enforces them — DONE.
+    `Read < Write < Admin < Owner` roles at `Org ⊇ Project ⊇ Repo` scope; the policy
+    (`effective_role`) is extracted into `authbox-core` over abstract
+    `ResourceRef`/`ResourceHierarchy`, with WIAB's containment layered on top. Enforced by
+    per-handler guards (`require_owner` / `require_org_role` / `require_repo_role` /
+    `require_self_or_owner`) that resolve a session cookie **or** bearer token **or** SSH
+    key to a principal, with PAT token-scope capping. (`wiab-core/access/`,
+    `authbox-core/rbac/`, `authorization_service.rs`, `http_api.rs`.)
 21. API versioning convention and a contract test harness
 22. In-process domain event bus with a transactional outbox
 23. Background job runner for async work
