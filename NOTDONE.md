@@ -36,14 +36,14 @@ Not started:
 - **#8** — Self-host Workinabox and start using it to build Workinabox
 - **#10** — One-command local dev bootstrap (backend + app + dev tooling)
 - **#11** — Backend produces a versioned, reproducible container image in CI (no Dockerfile)
-- **#12** — Postgres persistence behind the repository traits (in-memory only today; no db deps)
-- **#13** — Database migration tooling and a migration test in CI
+- ~~**#12** — Postgres persistence behind the repository traits~~ — **DONE** (2026-06): a `Postgres*Repository` for every aggregate (deadpool/tokio-postgres), chosen by `WIAB_PERSISTENCE` (default `postgres`; `memory` for tests).
+- ~~**#13** — Database migration tooling and a migration test in CI~~ — **DONE** (2026-06): refinery tooling (applied on boot; authbox migrations in a separate history table) + the CI `test` job now runs `postgres_integration` against a `postgres:16` service (applies host V1–V11 + authbox V1–V3 migrations on a fresh DB, idempotently, and exercises the repos), plus the Mailpit/OIDC integration tests against service containers.
 - **#15** — OpenTelemetry tracing wired inbound→outbound (`tracing` crate present, no OTel export)
 - **#16** — Single staging environment reachable from a public URL
 - **#17** — Infrastructure-as-code for the staging environment
 - **#18** — Secrets management (no secrets in repo, fetched at boot)
-- **#19** — Identity provider chosen and integrated for human users (no auth/login anywhere)
-- **#20** — Authorization model: roles, scopes, and enforcement middleware
+- ~~**#19** — Identity provider chosen and integrated for human users~~ — **DONE** (2026-06): in-house `authbox` crate set — local email/password login + sessions, "Continue with Google" and inbound enterprise OIDC/SSO, password reset, admin invite, self-service signup + email verification, deactivate/activate. See `docs/AUTH-DOCS.md`.
+- ~~**#20** — Authorization model: roles, scopes, and enforcement middleware~~ — **DONE** (2026-06): `Read/Write/Admin/Owner` over `Org⊇Project⊇Repo`; generic RBAC policy extracted to `authbox-core`; enforced by the per-handler `require_*` guards in `http_api.rs` (session cookie / bearer token / SSH key → principal). See `docs/AUTH-DOCS.md`.
 - **#21** — API versioning convention and a contract test harness
 - **#22** — In-process domain event bus with a transactional outbox
 - **#23** — Background job runner for async work
@@ -91,4 +91,4 @@ The one real screen, **Works**, is backed by stub data (`features/works/worksStu
 
 ## For reference — what *is* built
 
-So this file isn't read as "nothing works": website Home + Firebase hosting + CI; the `dev` CLI (`monitor`, `release`); and the backend Meeting + Work aggregates with the repository pattern (in-memory impls), SFU/mediasoup signaling, whisper transcription, and local llama inference.
+So this file isn't read as "nothing works": website Home + Firebase hosting + CI; the `dev` CLI (`monitor`, `release`); the backend Meeting + Work aggregates with the repository pattern, SFU/mediasoup signaling, whisper transcription, and local llama inference; git hosting (roadmap #5); and the **authbox identity system** (#19/#20 — local login, Google + enterprise OIDC SSO, sessions, password reset, invites, signup verification, RBAC; `docs/AUTH-DOCS.md`).
