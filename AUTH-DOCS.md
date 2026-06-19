@@ -165,10 +165,14 @@ Google and an enterprise IdP are the **same code path** with different config.
    use = the CSRF/state check), exchange the code (with the stored PKCE verifier), and
    **validate the ID token** (signature via the issuer's JWKS, `iss`/`aud`/`exp`, and the
    stored nonce) — all done by `openidconnect`.
-3. Resolve the identity: existing `(issuer, subject)` link → log in; else (with a verified
-   email) either link to an existing user (**enterprise only**, `auto_link_verified_email`)
-   or just-in-time provision a new one (`UserDirectory::provision`). Then establish a session
-   and 302 to `next` (validated to be a same-origin relative path — no open redirect).
+3. Resolve the identity: existing `(issuer, subject)` link → log in; else take the email
+   (from the `email` claim, falling back to `preferred_username`/UPN — Entra typically sends
+   the address there and omits `email`) and either link to an existing user (**enterprise
+   only**, `auto_link_verified_email`) or just-in-time provision a new one
+   (`UserDirectory::provision`). Whether the IdP's `email_verified` stamp is required is
+   **per-connection** (`require_email_verified`): `true` for Google (it reliably stamps it),
+   `false` for an enterprise IdP that is authoritative for its own users. Then establish a
+   session and 302 to `next` (validated to be a same-origin relative path — no open redirect).
 
 `subject` (the IdP's stable id) is the durable key, never the email. Google is configured
 with `auto_link_verified_email = false` to prevent account takeover via an attacker-asserted
@@ -247,10 +251,13 @@ The SPA pages are: `/login`, `/signup`, `/forgot-password`, `/reset-password`,
 | `WIAB_GOOGLE_CLIENT_ID` / `WIAB_GOOGLE_CLIENT_SECRET` | — | Google OAuth client. Redirect URI: `${WIAB_BASE_URL}/api/auth/oidc/google/callback`. |
 | `WIAB_AUTH_OIDC_ENABLED` | `false` | Offer enterprise SSO. |
 | `WIAB_OIDC_ISSUER` / `WIAB_OIDC_CLIENT_ID` / `WIAB_OIDC_CLIENT_SECRET` | — | The customer's IdP. Redirect URI: `${WIAB_BASE_URL}/api/auth/oidc/enterprise/callback`. |
-| `WIAB_SMTP_HOST` | — | If set, email is delivered via SMTP; otherwise it is **logged** (the link appears in the server log). |
+| `WIAB_EMAIL_PROVIDER` | `resend` | Email transport: `resend` (HTTP API) or `smtp` (lettre). Missing credentials ⇒ falls back to **logging** (the link appears in the server log). |
+| `WIAB_EMAIL_FROM` | `no-reply@workinabox.local` | From address (both providers). For Resend it must be on a verified domain (or `onboarding@resend.dev` for testing). Falls back to `WIAB_SMTP_FROM`. |
+| `RESEND_API_KEY` | — | Resend API key (used when provider is `resend`). |
+| `WIAB_SMTP_HOST` | — | SMTP server (used when provider is `smtp`). |
 | `WIAB_SMTP_PORT` | `587` | SMTP port. |
 | `WIAB_SMTP_USER` / `WIAB_SMTP_PASSWORD` | — | SMTP credentials (optional). |
-| `WIAB_SMTP_FROM` | `no-reply@workinabox.local` | From address. |
+| `WIAB_SMTP_FROM` | `no-reply@workinabox.local` | Legacy from address; `WIAB_EMAIL_FROM` takes precedence. |
 | `WIAB_SMTP_TLS` | `false` | Use TLS (rustls). Leave off for a local Mailpit on `:1025`. |
 
 Booleans accept `1/true/yes/on`. Flags off ⇒ the corresponding login buttons are hidden and
@@ -268,14 +275,23 @@ the endpoints reject.
 ### A. Single company, self-hosted box (the default)
 Nothing to configure beyond `WIAB_BASE_URL`. The bootstrap owner can log in
 (`owner@workinabox.local` / `WIAB_DEV_OWNER_PASSWORD`), then **invite** colleagues from the
-Users page; they set a password via the emailed link. Signup and federation stay off. Set up
-SMTP (below) so invites/resets actually send.
+Users page; they set a password via the emailed link. Signup and federation stay off.
+Configure email (below) so invites/resets actually send.
 
 ### B. Real email
-Point at any SMTP server: `WIAB_SMTP_HOST=smtp.example.com`, `WIAB_SMTP_PORT=587`,
-`WIAB_SMTP_USER`/`WIAB_SMTP_PASSWORD`, `WIAB_SMTP_FROM=you@example.com`, `WIAB_SMTP_TLS=true`.
-Without it, everything still works but the links are written to the log instead of emailed
-(fine for dev; the local docker-compose wires a Mailpit inbox at `http://localhost:8025`).
+The transport is selectable via `WIAB_EMAIL_PROVIDER` (default `resend`):
+
+- **Resend (default):** set `RESEND_API_KEY` and a `WIAB_EMAIL_FROM` on a domain you verified
+  in Resend (or `onboarding@resend.dev` for a quick test, which only delivers to your own
+  account address). One authenticated HTTPS call per email — no SMTP, no Basic-auth.
+- **SMTP:** set `WIAB_EMAIL_PROVIDER=smtp` plus `WIAB_SMTP_HOST`/`WIAB_SMTP_PORT`/
+  `WIAB_SMTP_USER`/`WIAB_SMTP_PASSWORD`/`WIAB_EMAIL_FROM`/`WIAB_SMTP_TLS`. Note Microsoft 365
+  is a poor fit — it's retiring Basic-auth SMTP; use Gmail (app password), SendGrid, SES, etc.
+
+If the selected provider has no credentials, everything still works but links are **written to
+the log** instead of sent (fine for dev). The local docker-compose also bundles **Mailpit**
+(`http://localhost:8025`); point at it with `WIAB_EMAIL_PROVIDER=smtp` + `WIAB_SMTP_HOST=mailpit`
++ `WIAB_SMTP_PORT=1025` to catch and view mail without an external account.
 
 ### C. Google login
 Create an OAuth client in Google Cloud, set the redirect URI to
@@ -285,14 +301,71 @@ A Google user with no local account is provisioned just-in-time; a Google email 
 an existing **password** account is *not* auto-linked (the user must sign in locally and link
 — a deliberate anti-takeover choice).
 
+### C′. Setting up a Google OAuth client (operator runbook)
+1. Go to the Google Cloud **Clients** page: <https://console.cloud.google.com/auth/clients>.
+   Create or select a project.
+2. First time, configure the **OAuth consent screen / Branding**: app name + support email,
+   **User type = External**. While the app is in **Testing** publishing status, only Google
+   accounts added under **Test users** can sign in — **add your own account** as a test user
+   (or publish the app for general availability).
+3. **Create Client** → application type **Web application**.
+4. Under **Authorized redirect URIs**, add (byte-for-byte) the callback for each environment:
+   - local: `http://localhost:3000/api/auth/oidc/google/callback`
+   - deployed: `https://<host>/api/auth/oidc/google/callback` (must be **HTTPS** — `http` is
+     only allowed for `localhost`).
+5. Copy the **Client ID** and **Client secret** into env: `WIAB_GOOGLE_CLIENT_ID`,
+   `WIAB_GOOGLE_CLIENT_SECRET`, and `WIAB_AUTH_GOOGLE_ENABLED=true`.
+
+**Per environment.** Like Entra, either add each environment's redirect URI to the same client
+or create a separate client per environment (independent rotation). The consent screen is
+shared across the project; moving from Testing to published removes the test-user restriction.
+
 ### D. Enterprise SSO (customer's IdP)
 The customer registers Workinabox as an OIDC client in their IdP (Okta/Entra/…), with
 redirect URI `${WIAB_BASE_URL}/api/auth/oidc/enterprise/callback`. Set
 `WIAB_AUTH_OIDC_ENABLED=true`, `WIAB_OIDC_ISSUER` (their issuer URL),
-`WIAB_OIDC_CLIENT_ID`, `WIAB_OIDC_CLIENT_SECRET`. Their users click "Sign in with SSO";
-because this connection auto-links verified emails, a user the admin pre-created (or invited)
-is matched, and otherwise provisioned just-in-time. One IdP connection per deployment (one
-box per company).
+`WIAB_OIDC_CLIENT_ID`, `WIAB_OIDC_CLIENT_SECRET`. Their users click "Sign in with SSO"; the
+connection matches them by email (falling back to `preferred_username`/UPN) **without**
+requiring the IdP's `email_verified` stamp (`require_email_verified=false`) — the enterprise
+IdP is authoritative for its own users — so a user the admin pre-created (or invited) is
+matched, and otherwise provisioned just-in-time. One IdP connection per deployment (one box
+per company).
+
+### D′. Setting up Microsoft Entra (operator runbook)
+Entra is the common enterprise case. Register Workinabox once, then map the values to env.
+
+1. Sign in to the [Microsoft Entra admin center](https://entra.microsoft.com). If you belong
+   to several tenants, use the top-bar **Settings** (gear) to switch to the target tenant.
+2. **Entra ID → App registrations → New registration.**
+3. **Name** `Workinabox`; **Supported account types** = *Single tenant only - <your tenant>*
+   (one box per company).
+4. **Redirect URI:** platform **Web**, value `${WIAB_BASE_URL}/api/auth/oidc/enterprise/callback`
+   (locally `http://localhost:3000/api/auth/oidc/enterprise/callback`). It must match
+   **byte-for-byte**. Plain `http` is accepted **only** for `localhost`; every deployed
+   environment must be **HTTPS**. Click **Register**.
+5. On **Overview**, copy the **Application (client) ID** and **Directory (tenant) ID**.
+6. **Manage → Certificates & secrets → Client secrets → New client secret.** Copy the
+   **`Value`** immediately (shown once; the `Secret ID` is not the secret). Treat it like a
+   password. Client secrets **expire** — set a reminder to rotate before the expiry you pick.
+
+Map to env:
+
+| Entra value | Env var |
+| --- | --- |
+| `https://login.microsoftonline.com/<Directory (tenant) ID>/v2.0` | `WIAB_OIDC_ISSUER` |
+| Application (client) ID | `WIAB_OIDC_CLIENT_ID` |
+| Client secret `Value` | `WIAB_OIDC_CLIENT_SECRET` |
+| — | `WIAB_AUTH_OIDC_ENABLED=true` |
+
+**Per environment.** Every environment that completes a sign-in does the server-side code
+exchange, so each needs valid credentials. Either add that environment's **HTTPS** redirect
+URI to the same registration (**Manage → Authentication**) and reuse the client ID + secret,
+or — recommended beyond throwaway — create a **separate registration per environment** so dev
+and the deployed box don't share a secret and can be rotated/revoked independently.
+
+**Entra claim shape.** Entra usually sends the address as `preferred_username` (the UPN) and
+omits `email`/`email_verified`. The adapter falls back to the UPN and the enterprise
+connection sets `require_email_verified=false`, so pre-provision users by their **UPN/email**.
 
 ### E. Open self-service signup
 Set `WIAB_AUTH_LOCAL_SIGNUP=true` (and SMTP). A "Create an account" link appears on login;
@@ -306,9 +379,12 @@ restriction is not yet implemented — see [What is not done](#what-is-not-done-
 - **Password hashing:** argon2id at the OWASP baseline (m = 19 MiB, t = 2, p = 1), run off
   the async worker. Verify is constant-time (the `argon2` crate).
 - **Sessions:** opaque server-side records (instant revocation), `HttpOnly` + `SameSite=Lax`
-  + `Secure` (in https) cookies. Created only after auth (no fixation). A CSRF token is
-  issued for future double-submit hardening; today `SameSite=Lax` is the CSRF defense
-  (the console is same-origin behind the `/api` proxy).
+  + `Secure` (in https) cookies. Created only after auth (no fixation).
+- **CSRF:** double-submit, **enforced**. Login sets a readable `wiab_csrf` cookie; the SPA
+  echoes it in `X-CSRF-Token` and the `csrf_guard` middleware requires it to hash to the
+  session's stored CSRF hash on every cookie-authenticated, state-changing request. Safe
+  methods, bearer/Basic callers, and the identity-establishing endpoints are exempt;
+  `SameSite=Lax` is a second layer.
 - **OIDC:** authorization-code **+ PKCE**, server-side single-use `state`, nonce-checked ID
   tokens, JWKS signature validation — all via `openidconnect`. `return_to` is restricted to
   same-origin relative paths (no open redirect). HTTPS to the IdP uses rustls (no OpenSSL).
@@ -373,20 +449,21 @@ their own repo is a path-dep → version-dep rename plus moving the three direct
 
 ## What is not done yet
 
-- **OIDC adapter is not exercised end-to-end in production** — it is verified against the
-  mock IdP and compiles against the real `openidconnect` API, but a first real Google /
-  enterprise login should be smoke-tested with real credentials. (In docker-compose, a mock
+- **No real-IdP smoke test yet** — the OIDC adapter is verified against a live mock IdP,
+  including an **Entra-shaped token** (address in `preferred_username`, no `email_verified`),
+  and compiles against the real `openidconnect` API, but a first login against a real Google /
+  Entra tenant should still be smoke-tested with real credentials. (In docker-compose, a mock
   IdP has a browser-vs-backend hostname subtlety, noted inline there; real IdPs don't.)
-- **Microsoft / Apple** social login — not wired (they go through the same OIDC connection
-  mechanism; Apple needs its key-based client-secret JWT).
+- **Microsoft / Apple as consumer social buttons** — not wired as dedicated connections.
+  Microsoft **Entra as an enterprise IdP** *is* handled by the enterprise OIDC connection (UPN
+  fallback + `require_email_verified=false`); a standalone consumer "Sign in with Microsoft" /
+  Apple button is not (Apple also needs its key-based client-secret JWT).
 - **SCIM** automated provisioning — the user record is shaped for it (`external_refs`,
   lifecycle state) but no SCIM endpoint exists; JIT + invite + admin-create cover provisioning.
 - **SAML** — OIDC only.
 - **MFA / TOTP** — not implemented.
 - **Signup domain allow-list** — signup is gated by a flag but not restricted to specific
   email domains yet.
-- **CSRF double-submit enforcement** — the token is issued but not yet required (relying on
-  `SameSite=Lax`); enforce it for defense-in-depth.
 - **Login-timing anti-enumeration** — `login` skips the argon2 verify for an unknown email
   (a minor timing oracle); flatten it with a dummy hash.
 - **Secrets management** — env-file/Terraform posture; no vault.
