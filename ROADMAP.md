@@ -71,19 +71,26 @@ When an item is done, overwrite it in place — do not remove it. The numbering 
 35. Memory consolidation across episodic, semantic, and procedural stores
 36. Return to meetings: capture, transcription, and event extraction feeding the agent model
 37. Voice-first UX in the mobile app on top of the meeting and agent stacks
-38. ML models must be a hard, fail-fast dependency — not silently disabled.
-    Today the backend silently degrades when model files are absent: meeting
-    intelligence falls back to `heuristic` when `WIAB_MEETING_INTELLIGENCE`
-    is unset, and transcription returns no-op when `WIAB_WHISPER_MODEL_PATH`
-    is unset/missing (`transcription.rs`, `bootstrap.rs::load_meeting_intelligence`).
-    The deployed VM runs this way unknowingly. Required:
-    - The binary must FAIL TO START if a required model env var is unset or the
-      model file is missing (no silent fallback). Remove the silent defaults.
-    - The model file is a deployment dependency that travels with the binary
-      (fetched at provision/package time to a fixed path, e.g. `/var/lib/wiab/models/`).
-    - Fix `backend/README.md` (and `.github/AGENTS.md`) which currently document
-      the disable-by-default behavior as if intended.
-    - OPEN DECISION (later): where the model files are fetched from. Options:
-      Hugging Face direct URL (pin revision + checksum; gemma is gated → needs an
-      HF token, TinyLlama/Qwen/whisper-ggml are open), a dedicated GitHub release
-      asset used as a permanent bucket (≤2 GB/file), or our own object storage.
+38. ML models must be a hard, fail-fast dependency — not silently disabled. — DONE.
+    Both models now load through one symmetric contract: each is independently toggled
+    by `WIAB_LLAMA_ENABLED` / `WIAB_WHISPER_ENABLED`, eager-loaded at boot, and HARD-FAILS
+    startup when enabled and the model is missing or fails to load (whisper now reports its
+    load result over a startup channel, like llama). Disabled means fully off — llama
+    disabled ⇒ no meeting intelligence (the `heuristic` fallback and `WIAB_MEETING_INTELLIGENCE`
+    are removed; meeting intelligence is now `Option<Arc<dyn MeetingIntelligence>>`).
+    Model path vars are filename-only (`WIAB_LLAMA_MODEL_FILE` / `WIAB_WHISPER_MODEL_FILE`),
+    resolved against `${WIAB_DATA_DIR}/models/` (default `~/.local/share/wiab` local,
+    `/var/lib/wiab` prod — mirrors `WIAB_GIT_ROOT`). (`wiab-inf/src/model_paths.rs`,
+    `transcription.rs`, `llama_meeting_intelligence.rs`, `bootstrap.rs::load_meeting_intelligence`,
+    `wiab-app/src/meeting_application_service.rs`; `backend/README.md` updated.)
+    Model files are fetched (NOT in the app process) from Azure blob storage via `azcopy`,
+    using a SAS-bearing `WIAB_MODELS_URL`. Models are treated as a versioned, in-place
+    deployable artifact like the binaries: the desired set is a Terraform `models` map keyed
+    by UPPERCASE role (`{ LLAMA = { enabled, file }, ... }`), and `wiab-deploy` reconciles it
+    on first boot AND every in-place deploy — generically discovering roles from the
+    `WIAB_<ROLE>_MODEL_FILE` env, fetching enabled models, syncing the app env, and restarting
+    only when the role=file fingerprint changed. Editing the map (add/remove/rename/toggle) is
+    the trigger: `terraform apply` SSHes in, refreshes the env, and re-fetches — no version
+    knob. Filenames are immutable (new weights ⇒ new filename). Locally:
+    `backend/scripts/fetch-models.sh`. (`iac/scripts/wiab-deploy.sh`, `iac/main.tf`,
+    `iac/variables.tf` `models`, `iac/templates/cloud-init.yaml.tftpl`.)
