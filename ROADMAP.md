@@ -92,5 +92,5 @@ When an item is done, overwrite it in place — do not remove it. The numbering 
     only when the role=file fingerprint changed. Editing the map (add/remove/rename/toggle) is
     the trigger: `terraform apply` SSHes in, refreshes the env, and re-fetches — no version
     knob. Filenames are immutable (new weights ⇒ new filename). Locally:
-    `backend/scripts/fetch-models.sh`. (`iac/scripts/wiab-deploy.sh`, `iac/main.tf`,
-    `iac/variables.tf` `models`, `iac/templates/cloud-init.yaml.tftpl`.)
+    `backend/scripts/fetch-models.sh`. (In the iac repo: `scripts/wiab-deploy.sh`, `main.tf`,
+    `variables.tf` `models`, `templates/cloud-init.yaml.tftpl`.)
