@@ -1,0 +1,11 @@
+{
+  // Structural markdown rules are enforced. Disabled rules are intentional:
+  //   MD013 line-length     — prose and wide tables are intentionally long
+  //   MD060 table-column-style — pipe-spacing is cosmetic, not enforced
+  "config": {
+    "default": true,
+    "MD013": false,
+    "MD060": false
+  },
+  "ignores": ["node_modules", "CLAUDE.md"]
+}
