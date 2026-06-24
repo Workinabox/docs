@@ -79,6 +79,7 @@ Partially started (not in the "not-at-all" set, but incomplete):
 These routes render a generic placeholder: `/board`, `/agents`, `/repos`, `/traces`, `/rooms`, `/security` (Security gates), `/pipelines`.
 
 The one real screen, **Works**, is backed by stub data (`features/works/worksStub.ts`) and has:
+
 - a non-functional filter input (no `onChange` / state / filtering),
 - a non-functional "+ New work" button (no `onClick`),
 - only 2 of 6 documented status badges (`completed`, `progress`; missing `created`, `assigned`, `blocked`, `failed`).

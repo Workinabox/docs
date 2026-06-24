@@ -35,7 +35,7 @@ How work is assigned (push vs. pull) is a policy decision configured per team or
 
 ### States
 
-```
+```text
 Created → Assigned → In Progress → Completed
                   ↘               ↗
                    → Blocked → Resumed
@@ -57,7 +57,7 @@ A task may also spawn child tasks during planning — these are separate tasks o
 
 A turn has an **outer frame** (runs once) and an **inner loop** (cycles until done).
 
-```
+```text
 TURN
 ├── Outer Frame (once)
 │   ├── Input

@@ -56,7 +56,7 @@ the product's own Postgres — there is no external identity provider.
 The reusable identity lives in three crates that depend only on each other (never on
 Workinabox), mirroring the host's `core / app / inf` layering:
 
-```
+```text
 authbox-core   domain + ports (no I/O): Role/Operation/RBAC, PrincipalId, Session,
                PasswordCredential, FederatedIdentity, VerificationToken, and the *traits*
                (SessionStore, CredentialStore, PasswordHasher, OidcPort, EmailSender,
@@ -135,6 +135,7 @@ plaintext travels once (in a cookie or an emailed link).
 ## How each flow works
 
 ### Local login & sessions
+
 1. `POST /auth/session {email, password}` → `AuthenticationService::login_with_password`:
    resolve email → principal (active only), load the password credential, argon2id-verify
    (off the async worker via `spawn_blocking`).
@@ -145,10 +146,12 @@ plaintext travels once (in a cookie or an emailed link).
    idle window slides on use; sessions are revocable (logout, password reset, deactivate).
 
 ### Change password (logged in)
+
 `PUT /auth/password {current_password, new_password}` re-verifies the current password, then
 sets the new one. Existing sessions are kept (voluntary change, not a compromise reset).
 
 ### Forgotten-password reset (emailed link)
+
 1. `POST /auth/password/reset/request {email}` always returns **202** (no account-existence
    disclosure). If the email is a known active user, a single-use token is stored (hashed,
    1 h expiry) and a link `…/reset-password?token=…` is emailed.
@@ -156,7 +159,9 @@ sets the new one. Existing sessions are kept (voluntary change, not a compromise
    password, and **revokes all the user's sessions** (a reset implies possible compromise).
 
 ### Social login & enterprise SSO (OIDC federation)
+
 Google and an enterprise IdP are the **same code path** with different config.
+
 1. `GET /auth/oidc/{connection}/start?next=…` → `FederationService::begin_login` →
    `OidcRelyingParty::begin`: discover the issuer, build the authorization URL with a fresh
    **PKCE** challenge + **nonce**, persist them in `auth_flow` keyed by `state`, and 302 the
@@ -179,13 +184,16 @@ with `auto_link_verified_email = false` to prevent account takeover via an attac
 email; the enterprise connection sets it `true` because its users are pre-provisioned.
 
 ### Admin invite
+
 1. Owner calls `POST /users/invite {email, name}` → create a **pending** user (no password) →
    `InvitationService::invite` issues an `Invite` token and emails `…/accept-invite?token=…`.
 2. The invitee `POST /auth/invite/accept {token, password}` → set their first password →
    **activate** the user → auto-login (session established).
 
 ### Self-service signup + email verification (off by default)
+
 Only when `WIAB_AUTH_LOCAL_SIGNUP=true`:
+
 1. `POST /auth/signup {email, password, name}` → create a **pending** user, set the password,
    and email `…/verify-email?token=…`. Always returns **202** (no existence leak).
 2. `POST /auth/verify-email {token}` → consume the token → **activate** → auto-login.
@@ -193,11 +201,13 @@ Only when `WIAB_AUTH_LOCAL_SIGNUP=true`:
 Because pending users are not active, they cannot log in until they click the link.
 
 ### Deactivate / reactivate
+
 `POST /users/{id}/deactivate` (owner) sets the user `deactivated` and **revokes their
 sessions immediately**; `find_by_email` then excludes them so they can't log in (their role
 grants and history are preserved). `POST /users/{id}/activate` reverses it.
 
 ### Machine auth (unchanged)
+
 PATs (`wiab_pat_…`, SHA-256-hashed, scoped, expirable) over HTTPS Basic/Bearer and SSH public
 keys continue to work exactly as before. Browsers use sessions; machines use tokens/keys; the
 bearer path takes precedence so the two never collide.
@@ -273,12 +283,14 @@ the endpoints reject.
 ## Usage scenarios
 
 ### A. Single company, self-hosted box (the default)
+
 Nothing to configure beyond `WIAB_BASE_URL`. The bootstrap owner can log in
 (`owner@workinabox.local` / `WIAB_DEV_OWNER_PASSWORD`), then **invite** colleagues from the
 Users page; they set a password via the emailed link. Signup and federation stay off.
 Configure email (below) so invites/resets actually send.
 
 ### B. Real email
+
 The transport is selectable via `WIAB_EMAIL_PROVIDER` (default `resend`):
 
 - **Resend (default):** set `RESEND_API_KEY` and a `WIAB_EMAIL_FROM` on a domain you verified
@@ -290,10 +302,10 @@ The transport is selectable via `WIAB_EMAIL_PROVIDER` (default `resend`):
 
 If the selected provider has no credentials, everything still works but links are **written to
 the log** instead of sent (fine for dev). The local docker-compose also bundles **Mailpit**
-(`http://localhost:8025`); point at it with `WIAB_EMAIL_PROVIDER=smtp` + `WIAB_SMTP_HOST=mailpit`
-+ `WIAB_SMTP_PORT=1025` to catch and view mail without an external account.
+(`http://localhost:8025`); point at it with `WIAB_EMAIL_PROVIDER=smtp` + `WIAB_SMTP_HOST=mailpit` + `WIAB_SMTP_PORT=1025` to catch and view mail without an external account.
 
 ### C. Google login
+
 Create an OAuth client in Google Cloud, set the redirect URI to
 `${WIAB_BASE_URL}/api/auth/oidc/google/callback`, then set `WIAB_AUTH_GOOGLE_ENABLED=true`,
 `WIAB_GOOGLE_CLIENT_ID`, `WIAB_GOOGLE_CLIENT_SECRET`. A "Continue with Google" button appears.
@@ -302,6 +314,7 @@ an existing **password** account is *not* auto-linked (the user must sign in loc
 — a deliberate anti-takeover choice).
 
 ### C′. Setting up a Google OAuth client (operator runbook)
+
 1. Go to the Google Cloud **Clients** page: <https://console.cloud.google.com/auth/clients>.
    Create or select a project.
 2. First time, configure the **OAuth consent screen / Branding**: app name + support email,
@@ -321,6 +334,7 @@ or create a separate client per environment (independent rotation). The consent 
 shared across the project; moving from Testing to published removes the test-user restriction.
 
 ### D. Enterprise SSO (customer's IdP)
+
 The customer registers Workinabox as an OIDC client in their IdP (Okta/Entra/…), with
 redirect URI `${WIAB_BASE_URL}/api/auth/oidc/enterprise/callback`. Set
 `WIAB_AUTH_OIDC_ENABLED=true`, `WIAB_OIDC_ISSUER` (their issuer URL),
@@ -332,12 +346,13 @@ matched, and otherwise provisioned just-in-time. One IdP connection per deployme
 per company).
 
 ### D′. Setting up Microsoft Entra (operator runbook)
+
 Entra is the common enterprise case. Register Workinabox once, then map the values to env.
 
 1. Sign in to the [Microsoft Entra admin center](https://entra.microsoft.com). If you belong
    to several tenants, use the top-bar **Settings** (gear) to switch to the target tenant.
 2. **Entra ID → App registrations → New registration.**
-3. **Name** `Workinabox`; **Supported account types** = *Single tenant only - <your tenant>*
+3. **Name** `Workinabox`; **Supported account types** = *Single tenant only - `<your tenant>`*
    (one box per company).
 4. **Redirect URI:** platform **Web**, value `${WIAB_BASE_URL}/api/auth/oidc/enterprise/callback`
    (locally `http://localhost:3000/api/auth/oidc/enterprise/callback`). It must match
@@ -368,6 +383,7 @@ omits `email`/`email_verified`. The adapter falls back to the UPN and the enterp
 connection sets `require_email_verified=false`, so pre-provision users by their **UPN/email**.
 
 ### E. Open self-service signup
+
 Set `WIAB_AUTH_LOCAL_SIGNUP=true` (and SMTP). A "Create an account" link appears on login;
 new users are created **pending** and must click the verification email to activate. (Domain
 restriction is not yet implemented — see [What is not done](#what-is-not-done-yet).)
@@ -379,7 +395,7 @@ restriction is not yet implemented — see [What is not done](#what-is-not-done-
 - **Password hashing:** argon2id at the OWASP baseline (m = 19 MiB, t = 2, p = 1), run off
   the async worker. Verify is constant-time (the `argon2` crate).
 - **Sessions:** opaque server-side records (instant revocation), `HttpOnly` + `SameSite=Lax`
-  + `Secure` (in https) cookies. Created only after auth (no fixation).
+  - `Secure` (in https) cookies. Created only after auth (no fixation).
 - **CSRF:** double-submit, **enforced**. Login sets a readable `wiab_csrf` cookie; the SPA
   echoes it in `X-CSRF-Token` and the `csrf_guard` middleware requires it to hash to the
   session's stored CSRF hash on every cookie-authenticated, state-changing request. Safe

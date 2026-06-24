@@ -200,7 +200,7 @@ authed API is a separate, later effort.)
 1. `User` aggregate + credentials + numbering/repo + `UserApplicationService` + management
    routes + seams (`TokenFactory`/`TokenHasher`/`KeyFingerprinter`).
 2. `RoleAssignment` + `Role`/`Scope`/`Operation` + numbering/repo + `AccessApplicationService`
-   + routes; core `effective_role` policy.
+   - routes; core `effective_role` policy.
 3. Repo `Visibility` (aggregate + routes); begin removing the per-repo token.
 4. `AuthorizationService` + identity resolution (`resolve_token`/`resolve_key`).
 5. Rewire `git_http` (token→user→authz, public anon-read) and `git_ssh` (key-only→authz);

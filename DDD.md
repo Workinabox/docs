@@ -19,6 +19,7 @@ Strategic design is about the big picture — where boundaries go, how contexts 
 A shared language between developers and domain experts that appears directly in code — struct names, method names, module names. Not a glossary. The living code.
 
 Rules:
+
 - If developers use different terms than domain experts, fix it. The translation layer is a bug source.
 - The language is scoped to a Bounded Context. The same word can mean different things in different contexts.
 - When the language changes (because understanding deepens), the code changes to match. They co-evolve.
@@ -68,6 +69,7 @@ Not everything deserves the same investment:
 Objects defined entirely by their attributes. No identity. Immutable.
 
 Properties:
+
 - Two value objects are equal if all attributes are equal
 - Immutable — to "modify," create a new instance
 - Self-validating — always in a valid state after construction
@@ -140,6 +142,7 @@ macro_rules! define_id {
 Objects with a distinct identity that persists through time. Two entities are equal iff they have the same identity, regardless of attributes.
 
 Properties:
+
 - Unique identity (usually an ID value object)
 - Mutable — state changes while identity remains
 - Equality by identity, not attributes
@@ -170,6 +173,7 @@ Place behavior on entities when the behavior requires the entity's state and enf
 An Aggregate is a cluster of domain objects treated as a single unit for data changes. The Aggregate Root is the single entity through which all external access passes.
 
 Properties:
+
 - External code can only hold references to the root, never internal entities
 - The root enforces all invariants for the entire aggregate
 - All modifications go through the root — it is the consistency boundary
@@ -214,6 +218,7 @@ Rust's ownership model naturally enforces aggregate boundaries — the root *own
 Operations that are important domain concepts but don't belong on any entity or value object. Verbs in the ubiquitous language that don't fit as methods on existing objects.
 
 Properties:
+
 - Stateless
 - Named using ubiquitous language verbs
 - Live in the domain layer
@@ -234,12 +239,14 @@ When to use vs. entity methods:
 Thin orchestrators that coordinate domain objects to perform a use case. The entry point for application behavior.
 
 Properties:
+
 - Contain NO business logic — delegate to domain objects
 - Handle cross-cutting concerns: transactions, security, logging, event publishing
 - Translate between outside world (DTOs, commands) and domain model
 - Live in the application layer, outside the domain
 
 A typical flow:
+
 1. Load aggregate(s) from repository
 2. Call domain methods on the aggregate(s)
 3. Save aggregate(s) through repository
@@ -251,6 +258,7 @@ A typical flow:
 Provide a collection-like interface for accessing aggregates. The interface is defined in the domain layer; implementation lives in infrastructure.
 
 Rules:
+
 - One repository per aggregate root. Never for internal entities or value objects.
 - Methods feel like collection operations and use ubiquitous language: `find_pending_orders()`, not `find_all("orders", { status: "pending" })`
 - Not a DAO. Not a generic CRUD wrapper. Not the ORM.
@@ -280,12 +288,14 @@ pub struct InMemoryOrderRepository {
 Something that happened in the domain that domain experts care about. Named in past tense using ubiquitous language: `OrderPlaced`, `TaskAssigned`, `MeetingEnded`.
 
 Properties:
+
 - Immutable facts — they happened, they cannot be undone
 - First-class part of the domain model
 - Enable decoupling between aggregates and between contexts
 - Capture what happened and when
 
 When to use:
+
 - Cross-aggregate side effects within a context
 - Cross-context integration
 - Event sourcing
@@ -327,6 +337,7 @@ In Rust, factory methods on the aggregate root or standalone `fn new(...)` with 
 Domain objects are data structures with getters/setters but no behavior. All business logic lives in service classes that manipulate these data bags.
 
 Problems:
+
 - Objects cannot protect their own invariants
 - Business rules scatter across service classes, get duplicated
 - Procedural code hidden behind a struct veneer
@@ -420,7 +431,7 @@ Tradeoffs: Typestate is powerful but makes heterogeneous collections harder. Use
 
 The domain sits at the center, defining ports (traits) for what it needs. Adapters implement those ports for specific technologies.
 
-```
+```text
                     ┌─────────────────────┐
    Inbound          │                     │         Outbound
    Adapters ──────► │   Domain + Use Cases │ ◄────── Adapters
@@ -438,6 +449,7 @@ In Rust, **traits ARE ports**. The domain crate defines trait abstractions. The 
 Separate the write model (commands, full domain, invariants) from the read model (queries, denormalized views, optimized for reads).
 
 Use when:
+
 - Read and write workloads scale differently
 - Query complexity distorts the domain model
 - You want to optimize reads independently
@@ -503,7 +515,7 @@ Composition happens in `main.rs` — the composition root.
 
 ### Module / crate organization
 
-```
+```text
 backend/
   crates/
     wiab-core/        # Domain layer. Entities, value objects, aggregates,
@@ -573,6 +585,7 @@ Aligning Bounded Contexts with stream-aligned teams. Team Topologies provides or
 ### DDD and AI
 
 Well-structured domain models benefit AI-assisted development:
+
 - Rich types and intention-revealing method names carry semantic meaning
 - Ubiquitous language helps AI understand intent
 - Well-bounded contexts provide focused scope for AI to reason about
