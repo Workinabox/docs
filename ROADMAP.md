@@ -58,7 +58,17 @@ When an item is done, overwrite it in place — do not remove it. The numbering 
 22. In-process domain event bus with a transactional outbox
 23. Background job runner for async work
 24. Error reporting and alerting on staging
-25. Mobile app CI: signed builds distributed to TestFlight and Play internal
+25. Mobile app CI: signed builds distributed to TestFlight and Play internal —
+    ANDROID FIRST. CI now runs `test` (Jest) and `build-android` (`assembleDebug`,
+    APK uploaded as an artifact) on every PR alongside lint + typecheck; pushing a
+    `v*` tag runs `release.yml`, which builds `assembleRelease` and attaches the
+    APK to a GitHub Release. (`app/.github/workflows/ci.yml`, `release.yml`;
+    `app/jest.config.js`, `jest.setup.js`, `__tests__/App.test.tsx`.)
+    Still TODO: (a) the iOS / "mac" side — TestFlight needs macOS runners + Apple
+    signing, **deferred until the Android path is solid**; (b) a production keystore
+    to replace the debug signing the release APK currently uses, then upload to the
+    Play internal track; (c) a real test suite — only one smoke test exists so far,
+    many more tests must be added.
 26. Documentation site published from `docs/`
 27. Production environment promoted from staging, with backup/restore drilled
 28. Feature flags
