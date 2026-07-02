@@ -16,6 +16,7 @@ Firecracker gives each one a hardware-isolated microVM that boots in well under 
 shared read-only image.
 
 ### Two nested VM levels — keep them straight
+
 - **Demo VM** — the xcp-ng host; runs the `wiab` backend; deploy-time lifecycle via terraform.
 - **Firecracker microVMs** — the sandboxes booted *on* the demo VM at runtime, many per day.
   From the host each is **one jailed process**; inside each is a full headless Linux
@@ -54,6 +55,7 @@ Root filesystems are built as **layered OCI images exported to ext4** (`iac/imag
 - `kernel/fetch.sh` — pins a Firecracker-compatible `vmlinux`.
 
 ### Distribution — CI → Azure blob → azcopy
+
 Images are large, change rarely, and can't live in git. They are built in **CI**, uploaded to
 **Azure blob**, and pulled onto the demo VM with `azcopy` into `/var/lib/wiab/images/` — the
 same mechanism the LLM model weights already use.
@@ -64,6 +66,7 @@ same mechanism the LLM model weights already use.
 ## Per-instance run model
 
 Booting a sandbox must **not** copy a multi-GB image:
+
 - `/dev/vda` = the role image (`developer.ext4`), **read-only**, shared by all instances.
 - `/dev/vdb` = a small **writable overlay** ext4, created per instance.
 - Guest init uses **overlayfs** (lower = read-only image, upper = overlay) so only per-instance
@@ -114,6 +117,6 @@ Recorded so the reasoning isn't lost; **not built** in this iteration.
   tokens); the backend brokers *both* agent↔backend and agent↔agent. General internet egress is
   a separate NAT data plane. (Maps to [AGENT_MODEL.md](AGENT_MODEL.md) delegate/consult/escalate.)
 - **Teams.** The real unit of execution is a **team** — an orchestrator agent + member agents,
-  each in its own role-templated microVM, linked by team-scoped comms. Needs a `Team` aggregate
-  + a `provision_team` flow. Distinguish *work* orchestration (the orchestrator agent) from
+  each in its own role-templated microVM, linked by team-scoped comms. Needs a `Team` aggregate +
+  a `provision_team` flow. Distinguish *work* orchestration (the orchestrator agent) from
   *infrastructure* orchestration (the backend). `Vm` would gain `team_id` + `role`.
