@@ -1,4 +1,6 @@
-I want to analyse a set of concepts in software developement. Define them and rank them abstractely and relate them. If even possible. 
+# Planning Model Discussion
+
+I want to analyse a set of concepts in software developement. Define them and rank them abstractely and relate them. If even possible.
 Thought for 6s
 
 Yes, it is possible, but not as one universal ranking.
@@ -173,7 +175,7 @@ Software Defect
 
 No need to bake Jira/Scrum/software vocabulary into the core.
 
-But then objectives can have multiple requirements? 
+But then objectives can have multiple requirements?
 Thought for 5s
 
 Yes.
@@ -197,11 +199,12 @@ Objective:
   Office is ready for employees on August 1
 
 Requirements:
-  - Office must be legally usable
-  - Internet must be operational
-  - Employees must have access cards
-  - Desks must be installed
-  - Fire safety approval must exist
+
+- Office must be legally usable
+- Internet must be operational
+- Employees must have access cards
+- Desks must be installed
+- Fire safety approval must exist
 
 Each requirement is one condition that must hold for the objective to be considered achieved.
 
@@ -219,9 +222,10 @@ Requirement:
   Internet must be operational
 
 Specifications:
-  - Minimum download speed must be 500 Mbit/s
-  - Wi-Fi must cover all office rooms
-  - Guest network must be isolated from company network
+
+- Minimum download speed must be 500 Mbit/s
+- Wi-Fi must cover all office rooms
+- Guest network must be isolated from company network
 
 So the clean model becomes:
 
@@ -345,6 +349,7 @@ Work:
   Implement password reset endpoint.
 
 Plan:
+
   1. Inspect existing auth routes.
   2. Add reset token table.
   3. Add endpoint.
