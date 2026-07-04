@@ -120,3 +120,18 @@ Recorded so the reasoning isn't lost; **not built** in this iteration.
   each in its own role-templated microVM, linked by team-scoped comms. Needs a `Team` aggregate +
   a `provision_team` flow. Distinguish *work* orchestration (the orchestrator agent) from
   *infrastructure* orchestration (the backend). `Vm` would gain `team_id` + `role`.
+- **Per-instance disk: sizing & exhaustion (unhandled today).** The only writable space in a
+  running microVM is the per-instance overlay (`/dev/vdb`, `mkfs.ext4`, size `WIAB_VM_OVERLAY_MIB`,
+  **default 2 GiB**). The role image (`/dev/vda`) is read-only, so *every* agent write — cloned
+  repos, `cargo`/`target`, downloaded deps, temp files — lands on that overlay. When it fills, the
+  guest gets ordinary ext4 **`ENOSPC`**: the microVM keeps running but writes and overlayfs
+  copy-ups fail, so the agent's task errors out (and modifying a file from the read-only lower
+  fails too, since it triggers a copy-up). **Nothing detects or reacts to this** — no disk
+  monitoring, auto-grow, or quota, and the backend can't observe a guest-internal full disk, so the
+  `Vm` aggregate stays `Running`, never `Failed`. Recovery is stop/relaunch, which **discards the
+  overlay** (uncommitted/unpushed work is lost). 2 GiB is tight for the `developer` role — a single
+  real Rust build routinely writes 1–3 GiB to `target/`. The host is unaffected: each overlay is
+  capped and jailed on the 250 GiB host disk, and the base image is hardlinked, not copied.
+  Hardening options for a later iteration: raise the default; report guest disk pressure to the
+  backend over the vsock agent channel so a VM can be marked degraded/`Failed` and reaped; and/or
+  make the overlay resizable.
