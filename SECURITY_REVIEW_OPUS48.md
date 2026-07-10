@@ -1072,7 +1072,7 @@ assumed:
   `mediasoup`/`opus`/`axum-server`; the codebase does not depend on them directly
   and cannot bump them independently of those parents.
 
-**Vulnerabilities**
+#### Vulnerabilities
 
 | Workspace | Crate | Version | Advisory | Sev | Compiled / reachable? | Remedy |
 |---|---|---|---|:--:|---|---|
@@ -1101,7 +1101,7 @@ assumed:
 | dev | `paste` | 1.0.15 | RUSTSEC-2024-0436 | unmaintained | Transitive | bump parent when available |
 | dev | `rand` | 0.9.2 | RUSTSEC-2026-0097 | unsound (precondition) | No — precondition not met | `cargo update -p rand` |
 
-**Recommended actions (in priority order)**
+#### Recommended actions (in priority order)
 
 1. **Fix the one reachable vulnerability:** in `dev`, `cargo update -p rustls-webpki`
    (moves to ≥0.103.13, clearing RUSTSEC-2026-0098/-0099/-0049/-0104). A broader
