@@ -1,6 +1,10 @@
 # Security Review — Workinabox
 
 Date: 2026-07-04
+Amended: 2026-07-10 — `cargo-audit` was subsequently installed and run against
+both Rust workspaces; results and remedies were folded into the "Dependency and
+supply-chain audit" section (new "Rust dependency audit (`cargo-audit`)"
+subsection) and I8 was updated accordingly. No C/H/M/L finding IDs changed.
 Reviewer: automated multi-agent security audit (Claude Code)
 Scope: all nine repositories in the `Workinabox` GitHub organisation
 Method: full source read of every repo plus targeted static analysis; every
@@ -977,12 +981,20 @@ surface.
   unused (`app`).** `android/.../AgentAudioPlayerModule.kt:21-25`,
   `ios/.../AgentAudioPlayer.m`. No JS references it. When wired in, treat server
   audio as untrusted (media-parser surface); keep using internal cache storage.
-- **I8 — `cargo audit` not installed; manual Rust dependency scan clean
-  (`backend`, `dev`).** No automated RUSTSEC scan was possible. A manual review of
-  locked versions (axum 0.8.8, tokio 1.50.0, rustls 0.23.40, ring 0.17.14, hyper
-  1.8.1, git2 0.20.4 / libgit2 1.9.4, argon2 0.5.3, russh 0.61.2, openidconnect
-  4.0.1, …) found no known-vulnerable pins and no git-sourced dependencies. Wire a
-  `rustsec/audit-check` CI job so advisories are caught going forward.
+- **I8 — Rust RUSTSEC scan now run with `cargo-audit` (`backend`, `dev`);
+  supersedes the earlier manual review.** The original review could not run an
+  automated scan (the tool was absent) and the manual pin review reported "clean".
+  `cargo-audit 0.22.2` has since been installed and run (2026-07-10); it surfaced
+  advisories the manual review missed — `backend`: 3 vulnerabilities + 12
+  warnings; `dev`: 6 vulnerabilities + 4 warnings. **After reachability triage the
+  only reachable, upstream-fixable vulnerability is `dev`'s `rustls-webpki`**;
+  `quinn-proto` (both workspaces) is not compiled into the build graph, `rsa`
+  (backend) has no patched release, and the `git2`/`rand`/`anyhow` unsoundness
+  advisories affect APIs/preconditions that are not exercised. Full per-advisory
+  results and remedies are in the "Rust dependency audit (`cargo-audit`)"
+  subsection under *Dependency and supply-chain audit*. Still open: wire a
+  `rustsec/audit-check` (or `cargo audit --deny warnings`) CI job so new advisories
+  are caught automatically going forward.
 - **I9 — LICENSE files missing in `docs` and `assets`.** All other repos and the
   org `.github` repo carry MIT. Add for consistency.
 - **I10 — No deep links, custom URL schemes, or WebViews in the mobile app
@@ -994,8 +1006,8 @@ surface.
 
 | Repo | Tool | Critical | High | Moderate | Low |
 |------|------|:--------:|:----:|:--------:|:---:|
-| `backend` | manual (cargo-audit absent) | 0 | 0 | 0 | 0 |
-| `dev` | manual (cargo-audit absent) | 0 | 0 | 0 | 0 |
+| `backend` | `cargo-audit` 0.22.2 | 0 | 1‡ | 2 | 0 |
+| `dev` | `cargo-audit` 0.22.2 | 0 | 2‡ | 4 | 0 |
 | `app` | `npm audit` | 0 | 0 | 1 | 0 |
 | `frontend` | `npm audit` | 1 | 2 | 1 | 0 |
 | `website` | `npm audit` | 0 | 0 | 0 | 1 |
@@ -1007,9 +1019,107 @@ Notes:
 - The `frontend` critical/high are the vitest and Vite dev-server advisories plus
   the transitive `form-data` — all detailed in M16; the two dev-server issues do
   not affect the shipped static bundle.
-- Rust rows are a manual pin review (I8), not an automated scan.
+- Rust rows count only CVSS/advisory **vulnerabilities** (backend 3, dev 6);
+  `cargo-audit` also reported **12 warnings** (backend) / **4 warnings** (dev) for
+  unmaintained, unsound, or yanked crates that carry no severity. The full
+  per-advisory list with reachability triage and remedies is in the *Rust
+  dependency audit (`cargo-audit`)* subsection immediately below.
+- **‡ The `High` Rust counts are `quinn-proto`, which is not compiled into either
+  build graph** (an optional `reqwest` `http3` dependency that is never enabled) —
+  the shipped binaries are not exposed to it. After reachability analysis the only
+  reachable, upstream-fixable vulnerability is `dev`'s `rustls-webpki` (the 4
+  Moderate in the `dev` row); the backend's 2 Moderate are the `rsa` Marvin
+  advisory, which is reachable but has no patched release.
 - No dependency is pulled from a git/URL source; no typosquat-looking packages; no
   `overrides`/`resolutions` forcing old versions; all lockfiles present.
+
+### Rust dependency audit (`cargo-audit`) — added 2026-07-10
+
+`cargo-audit 0.22.2` (RustSec advisory DB, 1159 advisories) was run against both
+Rust workspaces, superseding the manual pin review referenced in I8. Every
+advisory below was triaged for **reachability** — is the crate actually compiled
+into the build graph (`cargo tree`), and are the affected APIs called? — because
+`cargo-audit` flags every crate present in `Cargo.lock` regardless of whether the
+feature that pulls it is enabled. The reachability verdicts were verified, not
+assumed:
+
+- **`quinn-proto` is not compiled in either workspace.** It appears in both
+  lockfiles only as an optional dependency of `reqwest` behind the `http3`
+  feature, which neither crate enables (`reqwest` is pinned
+  `default-features = false, features = ["rustls-tls", "json"]`). It is absent
+  from `cargo tree -e all` in both workspaces — a lockfile artifact, not a shipped
+  code path. This is the single highest-CVSS row in each workspace, and it is not
+  exposed.
+- **The `git2` unsoundness advisories affect APIs the backend never calls.**
+  RUSTSEC-2026-0183 (`Remote::list()`) and RUSTSEC-2026-0184 (a `Signature` from a
+  buffer-created `BlameHunk`) — the backend is a git *host* and calls neither
+  remotes nor blame (grep for `Remote::list`/`blame`/`BlameHunk`/`find_remote`/
+  `.remote(` across `crates/` and `src/` is empty).
+- **`rsa` is compiled and reachable, but not via a decryption oracle.** It is
+  used for RS256 JWT/JWKS signature *verification* (`openidconnect`, `rsa 0.9.10`)
+  and SSH key auth (`russh`/`ssh-key`, `rsa 0.10.0-rc.18`) — public-key operations,
+  not the PKCS#1 v1.5 *decryption* of attacker-supplied ciphertext that the Marvin
+  timing attack (RUSTSEC-2023-0071) requires. No patched `rsa` exists, so the
+  advisory cannot be fully closed; practical exposure here is limited.
+- **`rustls-webpki 0.103.9` in `dev` is reachable and trivially fixable.** It does
+  real TLS certificate validation via `rustls` ← `reqwest` for the `dev` CLI's
+  outbound HTTPS. This is the one clearly-actionable reachable vulnerability, and a
+  patch bump clears all four advisories. (The backend's `rustls-webpki` is already
+  a fixed version and was not flagged — the `dev` lockfile is simply staler.)
+- **`atty` is build-time only** — pulled in as a *build-dependency* of
+  `mediasoup-sys` (`planus-translation`), so it never ships in the runtime binary.
+  `instant`, `paste`, `audiopus_sys`, and `rustls-pemfile` are transitive deps of
+  `mediasoup`/`opus`/`axum-server`; the codebase does not depend on them directly
+  and cannot bump them independently of those parents.
+
+#### Vulnerabilities
+
+| Workspace | Crate | Version | Advisory | Sev | Compiled / reachable? | Remedy |
+|---|---|---|---|:--:|---|---|
+| backend | `quinn-proto` | 0.11.14 | RUSTSEC-2026-0185 (mem exhaustion) | 7.5 High | **No** — `reqwest` `http3` off; absent from build graph | `cargo update -p quinn-proto` (→ ≥0.11.15) to clear the flag; no runtime exposure |
+| backend | `rsa` | 0.9.10 | RUSTSEC-2023-0071 (Marvin timing) | 5.9 Med | Yes, via `openidconnect` — signature verify only | No patched release; track upstream, minimize RSA use where an alternative exists |
+| backend | `rsa` | 0.10.0-rc.18 | RUSTSEC-2023-0071 (Marvin timing) | 5.9 Med | Yes, via `russh`/`ssh-key` — SSH key auth only | No patched release; track upstream |
+| dev | `quinn-proto` | 0.11.13 | RUSTSEC-2026-0185 + RUSTSEC-2026-0037 (DoS) | 8.7 High | **No** — not compiled | `cargo update` (bumps it; not compiled regardless) |
+| dev | `rustls-webpki` | 0.103.9 | RUSTSEC-2026-0098/-0099/-0049/-0104 (name-constraint & CRL flaws, CRL-parse panic) | Med | **Yes** — TLS cert validation via `rustls` ← `reqwest` | **`cargo update -p rustls-webpki` (→ ≥0.103.13)** — fixes all four |
+
+**Warnings** (no CVSS; unmaintained / unsound / yanked)
+
+| Workspace | Crate | Version | Advisory | Class | Reachable? | Remedy |
+|---|---|---|---|---|---|---|
+| backend | `anyhow` | 1.0.102 | RUSTSEC-2026-0190 | unsound (`downcast_mut`) | Yes | `cargo update -p anyhow` → 1.0.103 (fix available) |
+| backend | `git2` | 0.20.4 | RUSTSEC-2026-0183 | unsound (`Remote::list` UB) | No — API not called | bump `git2` when a patched release lands |
+| backend | `git2` | 0.20.4 | RUSTSEC-2026-0184 | unsound (`BlameHunk` UB) | No — API not called | bump `git2` when patched |
+| backend | `rand` | 0.7.3 / 0.9.2 | RUSTSEC-2026-0097 | unsound (custom-logger + `rand::rng()`) | No — precondition not met | `cargo update -p rand` |
+| backend | `crypto-bigint` | 0.7.3 | (yanked) | yanked | Yes, via `rsa 0.10`/`crypto-primes`/`elliptic-curve` | `cargo update -p crypto-bigint` off the yanked version |
+| backend | `atty` | 0.2.14 | RUSTSEC-2024-0375 / -2021-0145 | unmaintained + unsound | Build-dep only (`mediasoup-sys`) | bump `mediasoup` when available; not in runtime binary |
+| backend | `audiopus_sys` | 0.2.2 | RUSTSEC-2026-0150 | unmaintained | Yes, via `opus` (SFU audio) | track/bump `opus`; no direct control |
+| backend | `instant` | 0.1.13 | RUSTSEC-2024-0384 | unmaintained | Yes, via `parking_lot` ← `mediasoup` | bump `mediasoup` when available |
+| backend | `paste` | 0.1.18 | RUSTSEC-2024-0436 | unmaintained | Transitive | bump parent when available |
+| backend | `rustls-pemfile` | 2.2.0 | RUSTSEC-2025-0134 | unmaintained | Yes, via `axum-server` (TLS PEM load) | bump `axum-server` when available |
+| dev | `anyhow` | 1.0.102 | RUSTSEC-2026-0190 | unsound (`downcast_mut`) | Yes | `cargo update -p anyhow` → 1.0.103 |
+| dev | `lru` | 0.12.5 | RUSTSEC-2026-0002 | unsound (`IterMut` stacked-borrows) | Transitive | `cargo update -p lru` / bump parent |
+| dev | `paste` | 1.0.15 | RUSTSEC-2024-0436 | unmaintained | Transitive | bump parent when available |
+| dev | `rand` | 0.9.2 | RUSTSEC-2026-0097 | unsound (precondition) | No — precondition not met | `cargo update -p rand` |
+
+#### Recommended actions (in priority order)
+
+1. **Fix the one reachable vulnerability:** in `dev`, `cargo update -p rustls-webpki`
+   (moves to ≥0.103.13, clearing RUSTSEC-2026-0098/-0099/-0049/-0104). A broader
+   `cargo update` in the `dev` workspace also clears its stale `quinn-proto`.
+2. **Clear the trivially-fixable warnings:** `cargo update -p anyhow` (→1.0.103,
+   both workspaces) and `cargo update -p crypto-bigint` (off the yanked version),
+   then re-run `cargo audit` and confirm the build/tests still pass.
+3. **Bump `quinn-proto` in both lockfiles** to silence the highest-CVSS rows even
+   though the crate is not compiled — keeps the audit output clean so a real future
+   advisory is not lost in noise.
+4. **Accept-and-track the residual:** the `rsa` Marvin advisory (no patched crate;
+   reachable only via signature verification) and the `mediasoup`/`opus`-chain
+   unmaintained crates (`atty`, `audiopus_sys`, `instant`, `paste`,
+   `rustls-pemfile`) cannot be fixed from this repo. Record them in a `cargo-audit`
+   ignore list (`[advisories] ignore = [...]` in `audit.toml`) **with a written
+   justification per entry** so CI stays green while the exceptions remain visible.
+5. **Wire `cargo audit` into CI** for both workspaces (see roadmap item 9) so new
+   advisories fail the build rather than accumulating silently.
 
 ## Secret and credential file inventory
 
@@ -1118,7 +1228,11 @@ Ordered by risk-reduction per unit effort.
    third-party actions; separate untrusted-build from secret-holding deploy jobs;
    scope `contents: write` to the release job; env-indirect tag values; pin the
    mailpit image; run `npm audit`/`cargo audit` in CI and clear the frontend
-   advisories.
+   advisories. For Rust (see the *Rust dependency audit (`cargo-audit`)*
+   subsection): `cargo update -p rustls-webpki` in `dev` (the one reachable vuln),
+   `cargo update -p anyhow`/`-p crypto-bigint`/`-p quinn-proto`, and an `audit.toml`
+   ignore list with justifications for the residual unfixable advisories (`rsa`
+   Marvin, the `mediasoup`/`opus`-chain unmaintained crates).
 10. **Remaining low/informational items** as maintenance: constant-time CSRF
     compare, indexed token lookup, persistent SSH host key, backend `.gitignore`
     env patterns, cookie-consent withdrawal, LICENSE files, and the rest.
