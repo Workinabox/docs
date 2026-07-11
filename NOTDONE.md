@@ -74,7 +74,7 @@ Partially started (not in the "not-at-all" set, but incomplete):
 
 ## B. Started but hollow (placeholder / stub)
 
-### B1. Frontend console screens — `frontend/src/App.tsx` → `pages/Placeholder.tsx`
+### B1. Frontend screens — `frontend/src/App.tsx` → `pages/Placeholder.tsx`
 
 These routes render a generic placeholder: `/board`, `/agents`, `/repos`, `/traces`, `/rooms`, `/security` (Security gates), `/pipelines`.
 
