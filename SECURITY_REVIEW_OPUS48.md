@@ -5,6 +5,9 @@ Amended: 2026-07-10 — `cargo-audit` was subsequently installed and run against
 both Rust workspaces; results and remedies were folded into the "Dependency and
 supply-chain audit" section (new "Rust dependency audit (`cargo-audit`)"
 subsection) and I8 was updated accordingly. No C/H/M/L finding IDs changed.
+Amended: 2026-07-11 — C1 (unauthenticated state-changing REST endpoints) was remediated in the
+`backend` repo and is now marked **✅ Fixed** in its finding entry; the entry is retained for the
+historical record. No finding IDs changed.
 Reviewer: automated multi-agent security audit (Claude Code)
 Scope: all nine repositories in the `Workinabox` GitHub organisation
 Method: full source read of every repo plus targeted static analysis; every
@@ -79,7 +82,7 @@ surface.
 | Repo | Stack | Role |
 |------|-------|------|
 | `backend` | Rust (axum, tokio, sqlx/tokio-postgres, russh, git2, Firecracker) | API, auth/identity (`authbox`), git hosting, SFU, agent sandbox |
-| `frontend` | React + Vite + TypeScript, nginx, Docker | Web console (admin/management UI) |
+| `frontend` | React + Vite + TypeScript, nginx, Docker | Frontend (admin/management UI) |
 | `website` | React + Vite + TypeScript, Firebase Hosting | Public marketing site |
 | `app` | React Native (bare) | Mobile audio/meeting client |
 | `iac` | Terraform (xenorchestra), cloud-init, shell | XCP-ng provisioning + deploy |
@@ -91,6 +94,15 @@ surface.
 ## Critical findings
 
 ### C1 — Unauthenticated state-changing REST endpoints across every tenant
+
+**Status: ✅ Fixed (2026-07-11)** — a global fail-closed authentication middleware
+(`require_authentication` in `crates/wiab-inf/src/http_api.rs`, sibling to `csrf_guard`) now gates
+every route except a small public allow-list (`/health`, `/auth/*`, and the git Smart-HTTP
+endpoints, which self-authenticate). On top of that, every state-changing handler enforces
+per-resource authorization (`require_org_role` / `require_repo_role` / `require_owner`). Meetings,
+which previously belonged to no tenant, were made org-scoped
+(`/organizations/{organization_id}/meetings`) so they authorize like every other resource. The
+finding is retained below for the historical record.
 
 - **Repo:** `backend`
 - **Location:** `crates/wiab-inf/src/http_api.rs:34-153` (router; the only layer
@@ -479,7 +491,7 @@ surface.
   and reject bodies exceeding a sane bound; also set an explicit body limit on the
   git RPC routes.
 
-### M7 — No HTTP security response headers (console, marketing site, and API)
+### M7 — No HTTP security response headers (frontend, marketing site, and API)
 
 - **Repos:** `frontend`, `website`, `backend`
 - **Location:** `frontend/nginx.conf:1-24` (no `add_header` at all);
@@ -487,10 +499,10 @@ surface.
   security headers (`http_api.rs`).
 - **Issue:** None of `Content-Security-Policy`, `X-Frame-Options` /
   `frame-ancestors`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`,
-  `Permissions-Policy`, or `Strict-Transport-Security` are emitted. The console
-  (`frontend`) is an admin surface managing users, tokens, and SSH keys; the
+  `Permissions-Policy`, or `Strict-Transport-Security` are emitted. The `frontend`
+  is an admin surface managing users, tokens, and SSH keys; the
   website loads a third-party GA script and remote fonts with no CSP.
-- **Impact:** No clickjacking protection on the admin console (UI-redress against
+- **Impact:** No clickjacking protection on the frontend (UI-redress against
   destructive actions), no CSP defence-in-depth against any future injection or a
   compromised GA tag, and MIME-sniffing/referrer leakage. (Firebase Hosting does
   emit platform HSTS for the website; the app-level headers are the gap.)
@@ -500,7 +512,7 @@ surface.
   strict-origin-when-cross-origin`, a scoped `Permissions-Policy`, and a CSP
   scoped to the actual origins used (self + `googletagmanager.com` /
   `google-analytics.com` / Google Fonts for the website; `default-src 'self'` for
-  the console). Test with `Content-Security-Policy-Report-Only` first.
+  the frontend). Test with `Content-Security-Policy-Report-Only` first.
 
 ### M8 — Website pre-launch gate is client-side only; unreleased content ships to everyone
 
@@ -1159,7 +1171,7 @@ against that baseline:
 - **CSRF:** double-submit token bound to the session hash, enforced only on
   cookie-authenticated unsafe methods (Bearer/Basic exempt), with `HttpOnly` +
   `SameSite=Lax` session cookie and `Secure` over HTTPS; no state-changing GET
-  routes. The web console stores the session only in the HttpOnly cookie — never
+  routes. The frontend stores the session only in the HttpOnly cookie — never
   in `localStorage` — so it is not XSS-exfiltratable.
 - **OIDC:** PKCE (S256), single-use `state`, nonce validation, and ID-token
   signature/iss/aud/exp validation delegated to the vetted `openidconnect` crate
@@ -1219,7 +1231,7 @@ Ordered by risk-reduction per unit effort.
    size-limit git request bodies and gzip decompression; return generic 5xx
    errors.
 7. **Ship security headers and fix the client-side gate (M7, M8).** Add CSP /
-   frame-ancestors / nosniff / referrer-policy on the nginx console and Firebase
+   frame-ancestors / nosniff / referrer-policy on the nginx frontend and Firebase
    site; treat the pre-launch gate as UX only.
 8. **Mobile release hardening (H8, H9, M15, M17).** Real release signing key;
    remove blanket cleartext + move to HTTPS/`wss://`; server-side auth for the

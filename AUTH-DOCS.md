@@ -243,7 +243,7 @@ All paths are under the backend root and reached by the SPA as `/api/...` (nginx
 ¹ Returns 403 unless `WIAB_AUTH_LOCAL_SIGNUP=true`.
 
 The SPA pages are: `/login`, `/signup`, `/forgot-password`, `/reset-password`,
-`/accept-invite`, `/verify-email`, and the in-console `/account` (change password) and
+`/accept-invite`, `/verify-email`, and the in-frontend `/account` (change password) and
 `/users` (admin: create/invite/deactivate, plus SSH keys & PATs).
 
 ---

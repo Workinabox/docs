@@ -20,8 +20,8 @@ both git transports to identity-based auth, **HTTPS/TLS** (replacing plain HTTP)
 Confirmed decisions: full Read/Write/Admin/Owner roles at Org/Project/Repo scope; repo
 Private/Public visibility; agents auto-provisioned a User **with Write on their org**; tokens
 `wiab_pat_…`, SHA-256 hashed, shown once, **scopeable** (read-only and/or repo/org-restricted);
-TLS folded in; frontend (web console) included; **auth enforced now** on the management API +
-console sign-in; **build straight through** all 10 slices, review at the end.
+TLS folded in; frontend included; **auth enforced now** on the management API +
+frontend sign-in; **build straight through** all 10 slices, review at the end.
 
 Id convention: aggregate roots (`User` `U-###`, `RoleAssignment` `G-###`) use `*Numbering`
 seams; owned entities (`SshKey`, `AccessToken`) use in-domain UUIDs (the `DoneId::new()`
@@ -147,18 +147,18 @@ There are **two** frontends and they're different surfaces:
 
 - **`app/`** — the React Native mobile app: a meetings/voice app, monolithic `App.tsx`, **no
   navigation framework**, raw `fetch`, `useState`, no management screens.
-- **`frontend/`** — the web **console**: React + Vite + Redux Toolkit + axios + react-router,
-  with `Sidebar`/`ConsoleLayout` and a repeatable pattern — per entity a
+- **`frontend/`** — the **frontend**: React + Vite + Redux Toolkit + axios + react-router,
+  with `Sidebar`/`FrontendLayout` and a repeatable pattern — per entity a
   `features/<x>/{types,api,slice}.ts` plus a `pages/<X>Page.tsx` built on reusable
   `EntityPanel` (list+detail) and `EntityFormModal`. Already has Works/Board/Agents/Repos/
   Pipelines.
 
-Settings (keys, tokens, members, roles) is admin/management UI → it belongs in the **web
-console**, which already has the patterns. **The mobile app is out of scope** for settings
+Settings (keys, tokens, members, roles) is admin/management UI → it belongs in the
+**frontend**, which already has the patterns. **The mobile app is out of scope** for settings
 (it's a different surface and lacks a nav framework; full role admin on a phone isn't worth
-the detour). Repo visibility is a field on the existing console Repos page.
+the detour). Repo visibility is a field on the existing frontend Repos page.
 
-### Console screens (each follows the existing feature/page pattern)
+### Frontend screens (each follows the existing feature/page pattern)
 
 | Area | New page | Sidebar group | Backend |
 |---|---|---|---|
@@ -172,9 +172,9 @@ For each: a `features/<x>/{types,api,slice}.ts` (axios + `config.useStub` stub b
 `reposApi.ts`), the page on `EntityPanel`/`EntityFormModal`, a `Sidebar` nav entry, and a
 route in `App.tsx`. Keep stub-DB mode working for the new entities.
 
-### Console must now authenticate
+### Frontend must now authenticate
 
-Today the console makes **unauthenticated** axios calls; once the API is protected it must
+Today the frontend makes **unauthenticated** axios calls; once the API is protected it must
 sign in and send a token. Add: a stored token (localStorage), an **axios interceptor** that
 attaches `Authorization`, and a minimal **sign-in (paste-token)** screen seeded by the owner
 token printed at boot. Replaced later by the SSO identity provider (roadmap #19).
@@ -208,7 +208,7 @@ authed API is a separate, later effort.)
 6. Agent→User provisioning + default org grant.
 7. HTTPS/TLS in `main`.
 8. Bootstrap seeding (owner user + logged token).
-9. Web console: auth (token storage + axios interceptor + sign-in screen), then the
+9. Frontend: auth (token storage + axios interceptor + sign-in screen), then the
    settings pages (SSH keys, tokens, members/roles, users) + repo visibility toggle, each as
    a `features/<x>` + `pages/<X>Page` following the existing pattern. (Mobile app unchanged.)
 10. End-to-end verification.
