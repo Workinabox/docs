@@ -98,6 +98,37 @@ second implementation behind the same trait, added and boot-verified on the demo
 The service is exercised today via tests (provision → get → stop against the in-memory repo +
 runtime). Its production caller is the agent/team orchestration — future work.
 
+## Which agent runs in the sandbox
+
+`WIAB_AGENT_RUNTIME` selects what the sandbox boots. Resolved in
+`wiab-inf/src/agent_runtime.rs` and read by both VM runtimes.
+
+| Value | Agent | Image family |
+|---|---|---|
+| `rust` (default) | the `wiab-agent` binary | `wiab-agent-<template>` (`iac/images/agent/`) |
+| `langgraph` | the Python/LangGraph dev team from the `sw-dev-team` repo | `wiab-team-<template>` (`iac/images/team/`) |
+
+An unrecognised value warns and falls back to `rust`, rather than failing a boot
+over a typo.
+
+Two things differ for `langgraph`:
+
+- **A writable `/workspace`.** The team clones a repo and adds a git worktree per
+  developer. Docker mounts a sized tmpfs (`WIAB_WORKSPACE_MIB`, default 2048)
+  and keeps the rootfs read-only; the rest of the hardening is unchanged.
+- **Environment forwarding.** Everything in the `WIAB_TEAM_` namespace plus
+  `ANTHROPIC_API_KEY` is passed from the backend's own environment into the
+  guest — by prefix, so an option added to the team needs no backend change.
+  The full list is in `sw-dev-team/docs/ENV.md`.
+
+The team's own image needs Node as well as Python: the Claude Agent SDK drives
+the `claude` CLI as a subprocess.
+
+> **Not yet wired:** how a *task* reaches the sandbox. The backend launches it and
+> passes configuration, but the run payload and the retrieval of the team's
+> `result.json` are the deferred invocation protocol. The container entrypoint
+> already reads a payload from `WIAB_TEAM_PAYLOAD` for when that lands.
+
 ## Future direction
 
 Recorded so the reasoning isn't lost; **not built** in this iteration.
