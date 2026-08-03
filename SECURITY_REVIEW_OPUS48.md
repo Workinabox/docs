@@ -8,6 +8,12 @@ subsection) and I8 was updated accordingly. No C/H/M/L finding IDs changed.
 Amended: 2026-07-11 — C1 (unauthenticated state-changing REST endpoints) was remediated in the
 `backend` repo and is now marked **✅ Fixed** in its finding entry; the entry is retained for the
 historical record. No finding IDs changed.
+Amended: 2026-08-03 — second remediation batch. Every remaining backend code finding was
+re-verified against the current tree (which has moved: config centralisation, the Docker VM
+runtime, teams, NATS) and then fixed: **C2, H1, H2, H3, H4, M1, M2, M3, M5, M6, L4, L5, L6**
+are now marked **✅ Fixed**. Entries are retained in full for the historical record. Two
+findings' scope changed on inspection and this is noted in their entries. Infrastructure
+(`iac`) and mobile (`app`) findings are untouched and remain open. No finding IDs changed.
 Reviewer: automated multi-agent security audit (Claude Code)
 Scope: all nine repositories in the `Workinabox` GitHub organisation
 Method: full source read of every repo plus targeted static analysis; every
@@ -54,6 +60,23 @@ The second theme is **operational secret hygiene** on the infrastructure side
 the third is **missing rate limiting / brute-force protection** across the auth
 surface.
 
+### Remediation status (2026-08-03)
+
+| | Fixed | Open |
+|---|:--:|:--:|
+| Critical | C1, C2 | C3 |
+| High | H1, H2, H3, H4 | H5, H6, H7 (`iac`), H8, H9 (`app`) |
+| Medium | M1, M2, M3, M5, M6 | M4, M7–M17 |
+| Low | L4, L5, L6 | the rest |
+
+Everything fixed so far is in `backend` (plus one `frontend` nginx change required by M1). The
+two remediation batches deliberately covered the Critical and High backend findings and the
+Mediums that shared their machinery; they did not attempt the low-severity backend hardening.
+
+Still open **in `backend`**: M4 (precondition narrowed — see its entry), the per-account
+lockout half of M1, part of M7 (security response headers), and the Lows L1, L2, L3, L7.
+Everything else still open is in `iac`, `app`, `frontend`, or `website`.
+
 ### Finding counts by severity
 
 | Severity | Count |
@@ -66,16 +89,17 @@ surface.
 
 ### Top risks to fix first
 
-1. **C1/C2 — Unauthenticated REST API.** Add a global auth middleware and
-   per-resource authorization to every backend handler. Nothing else matters as
-   much; today the API is effectively public.
+Original ordering, kept as written — 1 and 3 are now done; see the status table above.
+
+1. ~~**C1/C2 — Unauthenticated REST API.**~~ Done (2026-07-11 and 2026-08-03).
 2. **C3 — Plaintext secrets in local Terraform state and `tfvars`.** Move to an
-   encrypted remote backend and rotate every secret those files contain.
-3. **H1 — `owner/owner` default admin plus plaintext token logged at boot.**
-   Refuse a default password in production and stop logging credentials.
+   encrypted remote backend and rotate every secret those files contain. **Now the
+   highest remaining risk.**
+3. ~~**H1 — `owner/owner` default admin plus plaintext token logged at boot.**~~ Done
+   (2026-08-03).
 4. **H5/H6/H7 — Infrastructure exposure.** Xen Orchestra TLS verification is
    disabled, `wiab.env` is world-readable, and untrusted microVMs can pivot to
-   the host and LAN.
+   the host and LAN. **Now the highest remaining cluster after C3.**
 
 ## Scope
 
@@ -140,6 +164,14 @@ finding is retained below for the historical record.
 
 ### C2 — Unauthenticated read of any private repository's contents and history
 
+**Status: ✅ Fixed (2026-08-03)** — C1's middleware closed the anonymous half of this in July,
+but the authorization half survived: the six browse handlers still took no headers and never
+consulted `Visibility` or role, so *any* authenticated caller — including a role-less signup
+account — could read every private repository in every organization. A
+`require_repo_read_access` helper now applies the git transport's rule verbatim (Public is
+readable by any authenticated caller, Private needs a Read role) and `list_repos` uses the
+existing project→org check. Regression tests drive the real router.
+
 - **Repo:** `backend`
 - **Location:** `crates/wiab-inf/src/http_api.rs` — `read_repo_file` (`:599`),
   `list_repo_files` (`:581`), `list_repo_commits` (`:619`), `list_branches`
@@ -199,6 +231,13 @@ finding is retained below for the historical record.
 
 ### H1 — Default `owner/owner` admin and plaintext credentials logged at first boot
 
+**Status: ✅ Fixed (2026-08-03)** — the password no longer has a baked-in default; seeding
+refuses to invent one unless the advertised base URL is loopback, so a deployed backend fails
+to start and names the variable to set rather than booting with a known administrator. The log
+line names only the account: neither the password nor the token is logged. The bootstrap token
+now expires in an hour and is written to `WIAB_BOOTSTRAP_TOKEN_FILE` at mode 0600 if a path is
+given, and otherwise simply expires unused.
+
 - **Repo:** `backend`
 - **Location:** `src/bootstrap.rs:566-614` (`seed_owner`), default password at
   `:604-605`, log line at `:610-613`.
@@ -217,6 +256,16 @@ finding is retained below for the historical record.
   only on an operator channel, not the structured log.
 
 ### H2 — Unauthenticated real-time signaling WebSocket enables meeting hijack and eavesdropping
+
+**Status: ✅ Fixed (2026-08-03)** — fixed at the root rather than at the gate. A
+`MeetingParticipant` named a person but pointed at nobody, so a seat was something you could
+*name*; it now carries the `UserId` entitled to occupy it, with aggregate invariants (a human
+seat has a user, an agent seat does not, no user holds two) making the reverse lookup total.
+`JoinMeeting` no longer accepts a `participant_id` at all — `validate_join` takes the
+authenticated user and returns the seat they hold. The `/signal` upgrade resolves the caller
+before upgrading, and `list_meetings` is gated on an organization role, closing the identifier
+disclosure. The other signals needed no change: each requires a peer that only a validated join
+creates, and `EndMeeting` was already owner-gated inside the aggregate.
 
 - **Repo:** `backend`
 - **Location:** `crates/wiab-inf/src/http_api.rs:151` and `:1747-1749`
@@ -242,6 +291,12 @@ finding is retained below for the historical record.
 
 ### H3 — Enterprise OIDC auto-links existing local accounts on an unverified email
 
+**Status: ✅ Fixed (2026-08-03)** — the enterprise connection now requires `email_verified`.
+The vulnerability was the *combination* with `auto_link_verified_email`, so this is the safe
+half to enforce: an enterprise IdP that genuinely omits the claim must not auto-link. A test
+that had encoded the old behaviour as intended ("enterprise accepts an unverified email") was
+replaced by one asserting the rejection.
+
 - **Repo:** `backend`
 - **Location:** `src/bootstrap.rs:361-364` (`auto_link_verified_email: true`,
   `require_email_verified: false` for the `enterprise` connection); linking logic
@@ -263,6 +318,11 @@ finding is retained below for the historical record.
   minimum restrict enterprise auto-link to the IdP's verified domain(s).
 
 ### H4 — OIDC federation lets deactivated users log back in
+
+**Status: ✅ Fixed (2026-08-03)** — `UserDirectory` gained `may_authenticate`, answered from
+the user's lifecycle state, and the existing-link branch now rejects a user who is not active.
+That branch never consulted the directory by email, which is precisely why the `find_by_email`
+filter did not cover it.
 
 - **Repo:** `backend`
 - **Location:** `crates/authbox-app/src/federation_service.rs:112-114`; session
@@ -385,6 +445,22 @@ finding is retained below for the historical record.
 
 ### M1 — No rate limiting or lockout on authentication surfaces; Argon2 CPU-exhaustion DoS
 
+**Status: ✅ Fixed (2026-08-03)** — four separate parts. Per-IP rate limiting
+(`tower_governor`) on login, reset, signup, invite acceptance and token issuance, with a looser
+limit for the git transport so a normal clone is not throttled into failing. A semaphore caps
+concurrent Argon2 work, bounding peak memory regardless of request rate. Passwords are capped
+at 128 characters, enforced in the application services rather than per-handler. Request bodies
+are bounded explicitly, with a separate larger limit on the git RPC routes.
+
+The limiter keys on `X-Forwarded-For`, so `frontend/nginx.conf` was changed to *overwrite*
+that header rather than append to it — appending leaves a client-chosen value in front and
+lets anyone get a fresh bucket per request. The server is also served with connect-info so a
+client reaching the backend directly (git over HTTPS) still has an address to key on.
+
+Not done: progressive per-account lockout. Per-IP limiting plus the concurrency cap addresses
+the exploitable part; account lockout is itself a denial-of-service vector against a known
+username and wants deliberate design.
+
 - **Repo:** `backend`
 - **Location:** `crates/wiab-inf/src/http_api.rs:962-996` (`login`), `:1069-1079`
   (reset request), `:1088-1109` (reset confirm), `:1280` (`signup`), `:1502-1519`
@@ -406,6 +482,13 @@ finding is retained below for the historical record.
 
 ### M2 — Username/email enumeration via login and signup response timing
 
+**Status: ✅ Fixed (2026-08-03)** — the login miss paths verify the presented password
+against a decoy hash (a real PHC of a value nobody knows, computed once at construction) and
+discard the answer, so a failed login costs exactly one verify whether or not the account
+exists. Signup spends the same hashing cost on the taken-email branch. Tested by counting
+hasher calls rather than timing them. Residual, stated in the code: the signup branches still
+differ by a database write and an email send, both far below Argon2.
+
 - **Repo:** `backend`
 - **Location:** `crates/authbox-app/src/authentication_service.rs:87-105` (early
   returns at `:92-97` before `verify`, acknowledged in the doc comment at
@@ -423,6 +506,10 @@ finding is retained below for the historical record.
   signup branches.
 
 ### M3 — Open-redirect bypass in `sanitize_return_to` via backslash
+
+**Status: ✅ Fixed (2026-08-03)** — backslashes are rejected outright rather than reasoned
+about, and the destination is re-sanitized at the callback, which is the hop that actually
+emits the `Location`.
 
 - **Repo:** `backend`
 - **Location:** `crates/wiab-inf/src/http_api.rs:1124-1129`, used at `oidc_start`
@@ -442,6 +529,13 @@ finding is retained below for the historical record.
   `/` or `\`). Re-sanitize on the callback as defence-in-depth.
 
 ### M4 — Path traversal in Firecracker role-image resolution via the agent template
+
+**Status: ⚠️ Still open, precondition narrowed (2026-08-03)** — the "unauthenticated" half of
+the precondition is gone (C1/C2), so this now requires an authenticated caller holding Write on
+the target organization, and only bites on a KVM host running the Firecracker backend. The
+path-traversal itself is unfixed: `VmTemplate` still accepts any non-empty string. Worth doing
+— an org member should not be able to mount arbitrary host `.ext4` files into a guest — but it
+is no longer reachable by a stranger.
 
 - **Repo:** `backend`
 - **Location:** `crates/wiab-inf/src/firecracker_runtime.rs:214-222`; validation
@@ -463,6 +557,14 @@ finding is retained below for the historical record.
 
 ### M5 — Internal error detail and subprocess stderr leaked to clients
 
+**Status: ✅ Fixed (2026-08-03)** — 5xx responses now carry a generated reference and
+nothing else, with the real message logged at ERROR against the same id. Covers `internal`,
+the git `spawn_failure`/`spawn_error` paths, and three raw error responses inside
+`authorize_git`. 400s still carry the domain's own validation message, which is the API's
+contract. Residual, noted in the code: the application services return `anyhow::Error`, so an
+infrastructure failure can in principle reach the 400 path — separating them properly means
+typed errors across the application layer.
+
 - **Repo:** `backend`
 - **Location:** `crates/wiab-inf/src/http_api.rs:887-889` (`internal` returns
   `err.to_string()` with 500), `:1739-1740` (`bad_request`);
@@ -478,6 +580,10 @@ finding is retained below for the historical record.
   log the detail server-side; do not forward subprocess stderr to clients.
 
 ### M6 — Unbounded gzip decompression of git request bodies (decompression bomb)
+
+**Status: ✅ Fixed (2026-08-03)** — decompression runs through a size-limited reader, so
+memory is bounded during the inflate rather than checked afterwards, and anything past 64 MiB
+is refused with 413.
 
 - **Repo:** `backend`
 - **Location:** `crates/wiab-inf/src/git_http.rs:199-214` (`decode_body`).
@@ -642,6 +748,17 @@ finding is retained below for the historical record.
 
 ### M15 — Mobile app has no client authentication; ownership enforced only in the UI
 
+**Status: ⚠️ Still open, and the app is now non-functional against the backend (2026-08-03)** —
+H2's fix requires the `/signal` socket to authenticate, and the app sends no credentials at
+all, so it can no longer join meetings. It already could not list them: it calls
+`GET /meetings`, a route that moved under `/organizations/{id}` in the C1 work. This is
+knowingly deferred, not overlooked. Doing it properly means OAuth 2.0 authorization-code +
+PKCE through the system browser (AppAuth), tokens in Keychain/Keystore, and refresh — and this
+backend is an OIDC *relying party*, not a provider, so there is no `/oauth/authorize` for a
+native client to use yet. Closing that gap is a feature in its own right and needs its own
+design; H9 (cleartext HTTP/ws) must land in the same piece of work, since a bearer token over
+`http://` is worthless.
+
 - **Repo:** `app`
 - **Location:** `App.tsx:306` (`fetch(.../meetings)`, no auth header), `:646-650`
   (`join_meeting`), `:719-733` (`end_meeting`), `:735-738` + `:774-781`
@@ -737,6 +854,9 @@ finding is retained below for the historical record.
 
 ### L4 — Dev email sender logs the full single-use reset/invite link
 
+**Status: ✅ Fixed (2026-08-03)** — the body is no longer logged; recipient and subject
+only.
+
 - **Repo:** `backend`
 - **Location:** `crates/authbox-inf/src/logging_email_sender.rs:9-12`.
 - **Issue:** `LoggingEmailSender` logs recipient, subject, and full body — which
@@ -749,6 +869,9 @@ finding is retained below for the historical record.
   always uses Resend/SMTP.
 
 ### L5 — Secret-bearing structs derive `Debug` with plaintext secrets
+
+**Status: ✅ Fixed (2026-08-03)** — hand-written redacting `Debug` for both structs, with
+tests asserting the secrets never appear in the rendered output.
 
 - **Repo:** `backend`
 - **Location:** `crates/authbox-app/src/authentication_service.rs:18-22`
@@ -763,6 +886,12 @@ finding is retained below for the historical record.
   `Secret`/`Redacted` newtype.
 
 ### L6 — Weak and inconsistently enforced password policy
+
+**Status: ✅ Fixed (2026-08-03)** — `validate_password` lives in `authbox-core` and is
+enforced by the application services, so a caller that does not go through an HTTP handler is
+covered too; the handlers call the same function for an early 400. A maximum length was added
+(as a bound on Argon2 work, not a strength rule). The policy immediately caught the seeded
+local dev password, which was five characters and would have failed its own rule.
 
 - **Repo:** `backend`
 - **Location:** `crates/wiab-inf/src/http_api.rs:1039,1092,1290,1328` (all
@@ -1204,32 +1333,27 @@ against that baseline:
 
 Ordered by risk-reduction per unit effort.
 
-1. **Close the API authorization gap (C1, C2).** Add a global authentication
-   middleware with an explicit public allow-list, then a per-resource
-   `require_*` check on every handler, with repo reads gated by visibility/role.
-   This single change removes both Criticals and the unauthenticated-access
-   precondition behind H2, M4, and M15. Add integration tests asserting 401/403
-   for every route without a credential.
+1. ~~**Close the API authorization gap (C1, C2).**~~ **Done.** The middleware landed
+   2026-07-11; per-resource authorization on the repo browse endpoints landed 2026-08-03,
+   along with the integration tests. Note the tests' route table is maintained by hand —
+   axum's `Router` does not expose its routes, so a *new* route is not covered
+   automatically.
 2. **Remediate infrastructure secret exposure (C3, H6, M9, M11).** Move Terraform
    to an encrypted, locked remote backend; rotate every secret in the current
    state/tfvars (XO token, DB password, Resend key, Google + OIDC client secrets,
    both SAS tokens); make `wiab.env` `0640`; generate a strong DB password; stop
    rendering durable secrets into cloud-init.
-3. **Fix the boot backdoor and credential logging (H1, L4, L5).** Refuse the
-   default owner password in production, stop logging the password and bootstrap
-   token, redact the logging email sender, and add redacting `Debug` to
-   secret-bearing structs.
-4. **Authenticate real-time media and harden SSO (H2, H3, H4, M3).** Auth the
-   `/signal` WebSocket at upgrade and bind it to the participant; require
-   `email_verified` (or an explicit link step) before enterprise auto-link;
-   re-check `is_active` on the SSO existing-link path; reject `\` in `next`.
+3. ~~**Fix the boot backdoor and credential logging (H1, L4, L5).**~~ **Done** (2026-08-03).
+4. ~~**Authenticate real-time media and harden SSO (H2, H3, H4, M3).**~~ **Done**
+   (2026-08-03). Note the media half went further than "bind it to the participant": the
+   participant is bound to a user in the aggregate, and the client no longer names one at all.
 5. **Harden the hypervisor and sandbox boundary (H5, H7, M12).** Enable XO TLS
    verification; set the microVM FORWARD policy to DROP with scoped egress-only
    rules; pin and checksum-verify the VMM, kernel, and azcopy downloads.
-6. **Add rate limiting and DoS bounds (M1, M2, M5, M6).** Per-IP/per-account
-   throttling and lockout on auth endpoints; cap password length; bound and
-   size-limit git request bodies and gzip decompression; return generic 5xx
-   errors.
+6. ~~**Add rate limiting and DoS bounds (M1, M2, M5, M6).**~~ **Done** (2026-08-03), except
+   progressive per-account lockout: per-IP limiting plus an Argon2 concurrency cap addresses
+   the exploitable part, and account lockout is itself a denial-of-service vector against a
+   known username, so it wants deliberate design rather than a default.
 7. **Ship security headers and fix the client-side gate (M7, M8).** Add CSP /
    frame-ancestors / nosniff / referrer-policy on the nginx frontend and Firebase
    site; treat the pre-launch gate as UX only.
