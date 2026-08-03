@@ -8,6 +8,11 @@ subsection) and I8 was updated accordingly. No C/H/M/L finding IDs changed.
 Amended: 2026-07-11 — C1 (unauthenticated state-changing REST endpoints) was remediated in the
 `backend` repo and is now marked **✅ Fixed** in its finding entry; the entry is retained for the
 historical record. No finding IDs changed.
+Amended: 2026-08-03 (later) — third remediation batch: **M4** and every Low in `backend`,
+`frontend`, `website` and `dev` are now **✅ Fixed**, along with the dependency advisories in
+both Rust workspaces. Two entries record decisions rather than fixes (**L8**, and **M8**/**L11**
+as knowingly accepted). One entry is new: **R1**, a regression introduced by the second batch
+and found while verifying this one. `app` and the rest of `iac` remain untouched.
 Amended: 2026-08-03 — second remediation batch. Every remaining backend code finding was
 re-verified against the current tree (which has moved: config centralisation, the Docker VM
 runtime, teams, NATS) and then fixed: **C2, H1, H2, H3, H4, M1, M2, M3, M5, M6, L4, L5, L6**
@@ -60,22 +65,30 @@ The second theme is **operational secret hygiene** on the infrastructure side
 the third is **missing rate limiting / brute-force protection** across the auth
 surface.
 
-### Remediation status (2026-08-03)
+### Remediation status (2026-08-03, after three batches)
 
-| | Fixed | Open |
-|---|:--:|:--:|
-| Critical | C1, C2 | C3 |
-| High | H1, H2, H3, H4 | H5, H6, H7 (`iac`), H8, H9 (`app`) |
-| Medium | M1, M2, M3, M5, M6 | M4, M7–M17 |
-| Low | L4, L5, L6 | the rest |
+| | Fixed | Accepted, documented | Open |
+|---|:--:|:--:|:--:|
+| Critical | C1, C2 | — | C3 |
+| High | H1, H2, H3, H4 | — | H5, H6, H7 (`iac`), H8, H9 (`app`) |
+| Medium | M1*, M2, M3, M4, M5, M6 | M8 | M7, M9–M14, M15, M16*, M17 |
+| Low | L1–L7, L9, L10, L12–L16 | L8, L11 | L17, L18 (`app`), L19, L20 (`iac`) |
+| Regression | R1 | — | — |
 
-Everything fixed so far is in `backend` (plus one `frontend` nginx change required by M1). The
-two remediation batches deliberately covered the Critical and High backend findings and the
-Mediums that shared their machinery; they did not attempt the low-severity backend hardening.
+\* M1 is complete except progressive per-account lockout, which is deliberately deferred — it
+is itself a denial-of-service vector against a known username. M16 is reduced rather than
+closed: the non-breaking advisories are cleared in both web repos, and what remains needs a
+`vite --force` and a `react-router` major.
 
-Still open **in `backend`**: M4 (precondition narrowed — see its entry), the per-account
-lockout half of M1, part of M7 (security response headers), and the Lows L1, L2, L3, L7.
-Everything else still open is in `iac`, `app`, `frontend`, or `website`.
+**Every remaining open finding is in `app` or `iac`, with three exceptions:** M7 (security
+response headers, in all three web-facing places), M13/M14 (SHA-pin the third-party Firebase
+deploy action, and split build from deploy in the preview workflow), and the breaking half of
+M16.
+
+`app` is blocked behind native authentication, which is a feature and not a fix — see M15.
+`iac` needs secret rotation and a `terraform apply`, so it is the operator's call. **C3 is now
+the highest remaining risk**, and the secrets in that state file should be treated as already
+exposed.
 
 ### Finding counts by severity
 
@@ -226,6 +239,26 @@ existing project→org check. Regression tests drive the real router.
   they contain — XO token, DB password, Resend key, Google + OIDC client secrets
   — and regenerate both blob SAS tokens. In the interim set the files to `0600`.
   Keep secrets out of `triggers`/rendered templates; source them at apply time.
+
+### R1 — Per-IP rate limiting was bypassable in production (regression from this remediation)
+
+- **Repo:** `iac` (introduced by the `backend`/`frontend` changes of 2026-08-03)
+- **Status: ✅ Fixed (2026-08-03)** — `scripts/provision.sh` now sets
+  `X-Forwarded-For $remote_addr`. **Requires a re-provision (or an equivalent edit to
+  `/etc/nginx/sites-available/wiab` plus an nginx reload) to take effect.**
+- **Issue:** M1's rate limiter keys on `X-Forwarded-For` and takes the first address in the
+  list. The batch-2 work hardened `frontend/nginx.conf` to overwrite that header — but that
+  file only configures the local docker-compose stack. Production nginx is written by
+  `iac/scripts/provision.sh`, which used `$proxy_add_x_forwarded_for`: it *appends* the real
+  address to whatever the client sent, leaving a client-chosen value in front.
+- **Impact:** A client sending `X-Forwarded-For: 9.9.9.9` was rate-limited as `9.9.9.9`, and by
+  rotating the value could make unlimited login attempts. For the interval between the two
+  batches, M1 read as closed while providing no protection in production — which is worse than
+  the original finding, because it invites you to stop worrying about brute force.
+- **Why it is recorded here:** the fix and the mistake are both part of this remediation's
+  history, and a reader of the M1 entry alone would otherwise believe rate limiting was working
+  from 2026-08-03. It also generalises: this codebase has *two* nginx configurations, and a
+  change to one is not a change to the other.
 
 ## High findings
 
@@ -530,12 +563,17 @@ emits the `Location`.
 
 ### M4 — Path traversal in Firecracker role-image resolution via the agent template
 
-**Status: ⚠️ Still open, precondition narrowed (2026-08-03)** — the "unauthenticated" half of
-the precondition is gone (C1/C2), so this now requires an authenticated caller holding Write on
-the target organization, and only bites on a KVM host running the Firecracker backend. The
-path-traversal itself is unfixed: `VmTemplate` still accepts any non-empty string. Worth doing
-— an org member should not be able to mount arbitrary host `.ext4` files into a guest — but it
-is no longer reachable by a stranger.
+**Status: ✅ Fixed (2026-08-03)** — and it was worse than recorded. The review described a
+Firecracker-only path traversal; the Docker runtime interpolates the same unvalidated name into
+a container image reference (`<prefix><template>:<tag>`), so `evil.registry.com/x` or
+`base@sha256:…` made the backend **pull and run an image of the attacker's choosing**. That is
+arbitrary container execution rather than a file read, and it applied to every deployment
+rather than only KVM hosts.
+
+`VmTemplate::new` now accepts only `[a-z0-9][a-z0-9._-]*` — an allow-list, in `wiab-core`, so
+one choke point covers both sinks and any future runtime inherits it. Reachable from the
+`vm_type` field of create-agent and create-team by any member with Write; verified that without
+the check, posting `vm_type: "../../etc/passwd"` returns 200 and creates the agent.
 
 - **Repo:** `backend`
 - **Location:** `crates/wiab-inf/src/firecracker_runtime.rs:214-222`; validation
@@ -621,6 +659,10 @@ is refused with 413.
   the frontend). Test with `Content-Security-Policy-Report-Only` first.
 
 ### M8 — Website pre-launch gate is client-side only; unreleased content ships to everyone
+
+**Status: 📝 Accepted, as the finding itself recommends (2026-08-03)** — the gate is UX, the
+content is marketing copy, and the source already says so. Recorded here so the decision is
+explicit rather than inherited. Do not reuse the pattern for anything confidential.
 
 - **Repo:** `website`
 - **Location:** `src/components/LaunchGate.tsx:14-21`, `src/lib/launch.ts:10-22`,
@@ -814,6 +856,10 @@ design; H9 (cleartext HTTP/ws) must land in the same piece of work, since a bear
 
 ### L1 — Ephemeral Git SSH host key when unconfigured
 
+**Status: ✅ Fixed (2026-08-03)** — the backend refuses to start with no
+`WIAB_GIT_SSH_HOST_KEY` when the advertised base URL is non-local, using the same loopback test
+H1 uses for the seeded password. Local development keeps the convenience.
+
 - **Repo:** `backend`
 - **Location:** `crates/wiab-inf/src/git_ssh.rs:41-44`; bind `src/main.rs:79`
   (`0.0.0.0:2222`).
@@ -827,6 +873,10 @@ design; H9 (cleartext HTTP/ws) must land in the same piece of work, since a bear
 
 ### L2 — Agent vsock reports logged unsanitized and unbounded
 
+**Status: ✅ Fixed (2026-08-03)** — control characters are escaped and the line truncated
+before logging, and the reader is bounded so the cap applies before a newline is seen rather
+than after.
+
 - **Repo:** `backend`
 - **Location:** `crates/wiab-inf/src/vm_comms_broker.rs:42-46`.
 - **Issue:** Lines read from the per-VM Unix socket (written by untrusted in-guest
@@ -839,6 +889,13 @@ design; H9 (cleartext HTTP/ws) must land in the same piece of work, since a bear
   before logging; treat all guest input as untrusted.
 
 ### L3 — Token/key authentication loads every user on each request
+
+**Status: ✅ Fixed (2026-08-03)** — `UserRepository` gained indexed lookups
+(`find_id_by_token_hash` / `find_id_by_ssh_fingerprint`) backed by a new V21 migration. The
+indexes are deliberately **not** UNIQUE: nothing rejects a duplicate SSH key today, so an
+existing database may hold one and a unique index would fail to create — at boot, since that is
+when migrations run. One behaviour change: a shared key now resolves to the lowest user id in
+both backends rather than to whichever the scan reached first.
 
 - **Repo:** `backend`
 - **Location:** `crates/wiab-app/src/user_application_service.rs:261-312`
@@ -907,6 +964,10 @@ local dev password, which was five characters and would have failed its own rule
 
 ### L7 — CSRF token comparison is not constant-time
 
+**Status: ✅ Fixed (2026-08-03)** — `subtle::ConstantTimeEq`. As the finding says, this was
+consistency rather than a live vector: the comparison is over SHA-256 digests, so a timing
+oracle would not let anyone construct a matching token.
+
 - **Repo:** `backend`
 - **Location:** `crates/authbox-app/src/authentication_service.rs:163-165`
   (`csrf_matches`).
@@ -920,6 +981,14 @@ local dev password, which was five characters and would have failed its own rule
   CSRF hash comparison to match the rest of the crypto discipline.
 
 ### L8 — nginx disables upstream TLS verification to the backend
+
+**Status: 📝 Accepted, documented (2026-08-03)** — not fixed, and deliberately so. Turning on
+`proxy_ssl_verify` requires nginx to trust the backend's certificate, which the backend
+generates for itself at startup unless `WIAB_TLS_CERT`/`KEY` are set. Closing it means giving
+both sides a certificate they agree on — a deployment change belonging with the deferred `iac`
+work, not a config change. In production this is a `127.0.0.1` hop; in compose it is
+container-to-container on a private network. The reasoning is now a comment in `nginx.conf` so
+it does not read as an oversight.
 
 - **Repos:** `frontend`, `iac`
 - **Location:** `frontend/nginx.conf:18` (`proxy_ssl_verify off`);
@@ -937,6 +1006,11 @@ local dev password, which was five characters and would have failed its own rule
 
 ### L9 — Frontend Docker uses floating base tags and runs nginx as root
 
+**Status: ✅ Fixed (2026-08-03)** — both base images pinned by digest, and the serve stage
+moved to `nginxinc/nginx-unprivileged`. Verified by running the built image: uid 101, `GET /`
+returns 200. It listens on 8080 (a non-root process cannot bind 80), so the compose mapping
+moved to `3000:8080`; the host port is unchanged.
+
 - **Repo:** `frontend`
 - **Location:** `Dockerfile:4` (`FROM node:22-bookworm`), `:19`
   (`FROM nginx:alpine`).
@@ -950,6 +1024,9 @@ local dev password, which was five characters and would have failed its own rule
 
 ### L10 — nginx version disclosure and unconditional WebSocket upgrade forwarding
 
+**Status: ✅ Fixed (2026-08-03)** — `server_tokens off` and a `map $http_upgrade
+$connection_upgrade`, bringing the container in line with what production nginx already did.
+
 - **Repo:** `frontend`
 - **Location:** `nginx.conf` (`server_tokens` unset → `on`), `:20-22`
   (Upgrade/Connection headers).
@@ -962,6 +1039,11 @@ local dev password, which was five characters and would have failed its own rule
   a `map $http_upgrade $connection_upgrade { default upgrade; '' close; }`.
 
 ### L11 — Previewer email allowlist baked into the public website bundle
+
+**Status: 📝 Accepted (2026-08-03)** — moving the check server-side needs Firebase custom
+claims or a Cloud Function, which is a feature rather than a fix. Accepted for now on the
+understanding that the allowlist is **not a secret**: it should not be stored as a GitHub Secret
+as though it were, since anyone can read it from the shipped bundle.
 
 - **Repo:** `website`
 - **Location:** `src/lib/launch.ts:13-18` (fed by `VITE_PREVIEW_ALLOWLIST`,
@@ -977,6 +1059,12 @@ local dev password, which was five characters and would have failed its own rule
 
 ### L12 — Website cookie consent cannot be withdrawn after acceptance
 
+**Status: ✅ Fixed (2026-08-03)** — a "Cookie settings" link in the footer reopens the banner,
+and rejecting now revokes: it denies analytics storage via gtag, stops further events, and
+deletes the `_ga` / `_ga_*` / `_gid` cookies against both the exact host and the dot-prefixed
+parent domain. The repo had no tests and CI passes with none, so four were added rather than
+ship compliance logic unverified.
+
 - **Repo:** `website`
 - **Location:** `src/components/CookieBanner.tsx:12-14`,
   `src/analytics/analytics.ts:19-26`.
@@ -991,6 +1079,10 @@ local dev password, which was five characters and would have failed its own rule
 
 ### L13 — Release workflows grant `contents: write` at workflow scope
 
+**Status: ✅ Fixed in `backend` (2026-08-03); already fixed in `frontend`/`website`** — the
+backend workflow now defaults to `contents: read`, with write granted only to the jobs that
+create and upload the release. The build job holds no token at all.
+
 - **Repos:** `backend`, `frontend`, `website`, `dev`, `app`
 - **Location:** top-level `permissions: contents: write` in each `release.yml`.
 - **Issue:** The write token is granted to every job (build/test/package), not
@@ -1001,6 +1093,11 @@ local dev password, which was five characters and would have failed its own rule
   `contents: write` only on the create-release/upload/deploy job.
 
 ### L14 — Tag-derived values interpolated into `run:` shell (latent injection)
+
+**Status: ✅ Fixed in `backend`, `frontend`, `website` (2026-08-03)** — tag and version values
+now reach the scripts through `env:`. No `${{ }}` remains inside any `run:` block in those three
+repos; the remaining uses are in `env:`/`with:`/`outputs:`, which are not shell contexts. `dev`
+still has this pattern.
 
 - **Repos:** `backend`, `frontend`, `website`, `dev`
 - **Location:** `run:` blocks using `${{ steps.get_tag.outputs.tag }}` /
@@ -1015,6 +1112,8 @@ local dev password, which was five characters and would have failed its own rule
 
 ### L15 — Unpinned Docker service image in backend CI
 
+**Status: ✅ Fixed (2026-08-03)** — pinned to `axllent/mailpit:v1.30.6`.
+
 - **Repo:** `backend`
 - **Location:** `.github/workflows/ci.yml:95` (`axllent/mailpit`, no tag →
   floating latest; `postgres:16` and the mock OIDC server are pinned).
@@ -1024,6 +1123,9 @@ local dev password, which was five characters and would have failed its own rule
 - **Recommendation:** Pin `axllent/mailpit@sha256:…` or a version tag.
 
 ### L16 — backend/.gitignore has no env/secret patterns
+
+**Status: ✅ Fixed (2026-08-03)** — `.env`, `.env.*` and a `!.env.example` exception added,
+matching the other repos.
 
 - **Repo:** `backend`
 - **Location:** `backend/.gitignore` (covers only build artifacts).
