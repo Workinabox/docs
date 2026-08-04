@@ -8,9 +8,17 @@ subsection) and I8 was updated accordingly. No C/H/M/L finding IDs changed.
 Amended: 2026-07-11 — C1 (unauthenticated state-changing REST endpoints) was remediated in the
 `backend` repo and is now marked **✅ Fixed** in its finding entry; the entry is retained for the
 historical record. No finding IDs changed.
-Amended: 2026-08-04 (later) — fourth remediation batch: **H6, H7, M7, M9, M10, M12, M13, M14,
-L19, L20** fixed. That closes every finding outside `app` and the deferred items. `iac` changes
-take effect on the operator's next provision; they are code, not applied state.
+Amended: 2026-08-03 — second remediation batch. Every remaining backend code finding was
+re-verified against the current tree (which has moved: config centralisation, the Docker VM
+runtime, teams, NATS) and then fixed: **C2, H1, H2, H3, H4, M1, M2, M3, M5, M6, L4, L5, L6**
+are now marked **✅ Fixed**. Entries are retained in full for the historical record. Two
+findings' scope changed on inspection and this is noted in their entries. Infrastructure
+(`iac`) and mobile (`app`) findings are untouched and remain open. No finding IDs changed.
+Amended: 2026-08-03 (later) — third remediation batch: **M4** and every Low in `backend`,
+`frontend`, `website` and `dev` are now **✅ Fixed**, along with the dependency advisories in
+both Rust workspaces. Two entries record decisions rather than fixes (**L8**, and **M8**/**L11**
+as knowingly accepted). One entry is new: **R1**, a regression introduced by the second batch
+and found while verifying this one. `app` and the rest of `iac` remain untouched.
 Amended: 2026-08-04 — **C3 re-assessed and its severity reduced.** The original entry instructed
 the reader to treat the Terraform state as already exposed and rotate six credentials. That was
 asserted without establishing where the state lived or who could reach it. It was never
@@ -18,21 +26,90 @@ committed, is absent from the project tree, and lives on one operator machine. T
 gap (no encrypted, locked remote backend) stands and now also names the state-loss and
 concurrent-apply risks, which are the stronger arguments for fixing it. Cross-references in the
 summary, the secret inventory, M11 and the roadmap were corrected to match. No IDs changed.
-Amended: 2026-08-03 (later) — third remediation batch: **M4** and every Low in `backend`,
-`frontend`, `website` and `dev` are now **✅ Fixed**, along with the dependency advisories in
-both Rust workspaces. Two entries record decisions rather than fixes (**L8**, and **M8**/**L11**
-as knowingly accepted). One entry is new: **R1**, a regression introduced by the second batch
-and found while verifying this one. `app` and the rest of `iac` remain untouched.
-Amended: 2026-08-03 — second remediation batch. Every remaining backend code finding was
-re-verified against the current tree (which has moved: config centralisation, the Docker VM
-runtime, teams, NATS) and then fixed: **C2, H1, H2, H3, H4, M1, M2, M3, M5, M6, L4, L5, L6**
-are now marked **✅ Fixed**. Entries are retained in full for the historical record. Two
-findings' scope changed on inspection and this is noted in their entries. Infrastructure
-(`iac`) and mobile (`app`) findings are untouched and remain open. No finding IDs changed.
+Amended: 2026-08-04 (later) — fourth remediation batch: **H6, H7, M7, M9, M10, M12, M13, M14,
+L19, L20** fixed. That closes every finding outside `app` and the deferred items. `iac` changes
+take effect on the operator's next provision; they are code, not applied state.
 Reviewer: automated multi-agent security audit (Claude Code)
 Scope: all nine repositories in the `Workinabox` GitHub organisation
 Method: full source read of every repo plus targeted static analysis; every
 Critical and High finding was independently re-verified against the source.
+
+## State of play (2026-08-04)
+
+Four remediation batches have been applied across `backend`, `frontend`, `website`, `dev`,
+`iac` and this repository. **No code finding outside `app` remains open.** Nothing was
+deployed at any point — every `iac` change is committed code that takes effect on the next
+provision.
+
+Read this section first if you are picking the work up. The finding entries below are the
+authority on *what* and *why*; this is the shortlist of what is still outstanding and who can
+act on it.
+
+### Outstanding — only the operator can do these
+
+| # | Action | Why it matters |
+|---|--------|----------------|
+| 1 | **Re-provision, or edit `/etc/nginx/sites-available/wiab` and reload nginx** | Until then, per-IP rate limiting on the auth endpoints is **bypassable in production** with a forged `X-Forwarded-For`. The fix is merged but unapplied. See R1. |
+| 2 | **Update `terraform.tfvars` before the next apply** | Breaking — see the next subsection. `plan` will fail without it. |
+| 3 | **Check whether `xoa_insecure` is `"true"` in your live tfvars** | The repo default is already `"false"`. If yours is `"true"`, H5 is open and needs a real certificate on Xen Orchestra — not a code change. |
+| 4 | **Flip the website CSP from `Content-Security-Policy-Report-Only` to `Content-Security-Policy`** | It ships in report-only because the policy is derived from source but was never exercised in a browser. Load a page, confirm no console violations, then enforce. `website/firebase.json`. |
+| 5 | **Rotate the live Postgres password** | M9's validation is in place, but the old value (`wiab`) is still whatever the running host has. |
+
+### Breaking configuration changes
+
+`terraform.tfvars` needs attention before the next `apply`:
+
+- `db_password` — **no longer has a default** and is validated: at least 16 characters from
+  `[A-Za-z0-9._~-]`. The charset is deliberate; the value lands in a `DATABASE_URL` and in a
+  shell-sourced env file.
+- `ssh_admin_cidr` — **new**, optional. Unset means SSH accepts connections from any source,
+  and provisioning logs a warning saying so. Set it to your network.
+- `rtc_min_port` / `rtc_max_port` — **new**, default `40000`–`40999`. Must match the backend's
+  `WIAB_MEDIASOUP_MIN_PORT`/`MAX_PORT`; the firewall opens exactly this range.
+
+`terraform.tfvars.example` carries all three with comments.
+
+### One ordering constraint
+
+The backend pins its WebRTC transport range and the firewall opens exactly that range. The
+backend change must be live **before or with** the narrowed firewall rule. Both are merged, so
+this only matters if you deploy them separately: a mismatch presents as media that negotiates
+successfully and then carries no audio, which is an unpleasant thing to debug.
+
+### The decision that blocks six findings
+
+**H8, H9, M15, M17, L17 and L18 are all in `app`, and all wait on one architectural choice:**
+how the mobile client authenticates. Three options were weighed:
+
+1. **The app performs OIDC against the already-configured IdP (Google/Entra) and the backend
+   exchanges the resulting `id_token` for a session.** Recommended. Uses
+   `react-native-app-auth` for authorization-code + PKCE in the system browser, reuses the
+   JWKS/nonce validation the backend already has, and needs one new endpoint. No password is
+   ever typed into the app, and SSO and MFA work.
+2. **The backend becomes an OAuth 2.0 authorization server** (`/oauth/authorize`, `/oauth/token`,
+   rotating refresh tokens). The fully correct, IdP-independent answer, and a substantial
+   feature in its own right.
+3. **Password grant against the existing `/auth/session`.** Fastest, and deprecated in OAuth
+   2.1 for good reasons — it cannot do SSO or MFA and would have to be migrated off.
+
+Whichever is chosen, **H9 must land in the same work**: the app currently uses `http://` and
+`ws://`, and a bearer token over cleartext is worthless. Note the app cannot reach the backend
+today regardless — it calls `GET /meetings`, a route that moved under
+`/organizations/{id}/meetings`, and the signalling socket now requires authentication.
+
+### Decisions already taken
+
+Recorded so they are not silently reopened. Each has its reasoning in the relevant entry.
+
+- **M1's progressive per-account lockout** — deliberately not implemented. Per-IP limiting plus
+  an Argon2 concurrency cap covers the exploitable part; lockout is itself a denial-of-service
+  vector against a known username.
+- **M8, L8, L11** — accepted, not fixed.
+- **C3** — deferred. Re-assessed 2026-08-04: not an active leak.
+- **M16's breaking upgrades** — not taken. `vite` needs `--force` past an exact pin and
+  `react-router` needs a major; both are build/routing changes the test suites would not
+  necessarily catch.
+- **M12, M13** — partial by design. See their entries for what is still unverified.
 
 ## How to read this document
 
