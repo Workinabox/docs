@@ -8,6 +8,13 @@ subsection) and I8 was updated accordingly. No C/H/M/L finding IDs changed.
 Amended: 2026-07-11 — C1 (unauthenticated state-changing REST endpoints) was remediated in the
 `backend` repo and is now marked **✅ Fixed** in its finding entry; the entry is retained for the
 historical record. No finding IDs changed.
+Amended: 2026-08-04 — **C3 re-assessed and its severity reduced.** The original entry instructed
+the reader to treat the Terraform state as already exposed and rotate six credentials. That was
+asserted without establishing where the state lived or who could reach it. It was never
+committed, is absent from the project tree, and lives on one operator machine. The structural
+gap (no encrypted, locked remote backend) stands and now also names the state-loss and
+concurrent-apply risks, which are the stronger arguments for fixing it. Cross-references in the
+summary, the secret inventory, M11 and the roadmap were corrected to match. No IDs changed.
 Amended: 2026-08-03 (later) — third remediation batch: **M4** and every Low in `backend`,
 `frontend`, `website` and `dev` are now **✅ Fixed**, along with the dependency advisories in
 both Rust workspaces. Two entries record decisions rather than fixes (**L8**, and **M8**/**L11**
@@ -86,9 +93,12 @@ deploy action, and split build from deploy in the preview workflow), and the bre
 M16.
 
 `app` is blocked behind native authentication, which is a feature and not a fix — see M15.
-`iac` needs secret rotation and a `terraform apply`, so it is the operator's call. **C3 is now
-the highest remaining risk**, and the secrets in that state file should be treated as already
-exposed.
+`iac` needs a `terraform apply`, so it is the operator's call. **C3 was re-assessed on
+2026-08-04** and is not an active leak — the state was never committed and lives on a single
+operator machine; see its entry for what remains true and why rotation is not implied by the
+finding alone. That makes **H5, H6 and H7 the highest remaining risks**: TLS verification to the
+hypervisor is disabled, `wiab.env` is world-readable on the host, and sandbox microVMs can
+reach the host and LAN.
 
 ### Finding counts by severity
 
@@ -209,36 +219,60 @@ existing project→org check. Regression tests drive the real router.
   visibility check down into `RepoApplicationService` so no future caller can
   forget it.
 
-### C3 — Plaintext infrastructure secrets in local Terraform state and tfvars, no encrypted backend
+### C3 — No encrypted, locked remote Terraform state (severity reduced 2026-08-04)
+
+**Status: ⚠️ Open, but re-assessed — this is not an active leak.** The original entry told the
+reader to treat the state as already exposed and rotate six credentials. That instruction was
+based on the files being present at review time, without establishing where they lived or who
+could reach them. Verified 2026-08-04:
+
+- No `terraform.tfstate`, `terraform.tfstate.backup` or `terraform.tfvars` exists anywhere in
+  the project tree on the development machine — only the committed
+  `terraform.tfvars.example`, which holds no values.
+- Neither file has **ever** been added in any commit on any branch (`git log --all
+  --diff-filter=A`). The only match in history is the `.example`.
+- `.terraform/` contains provider plugins only: `terraform init` has run in this checkout,
+  `apply` has not.
+- CI never touches state or secrets — `ci.yml` runs `fmt`, `init -backend=false` and
+  `validate`.
+- The live state lives on the single operator's Windows/WSL machine, deliberately kept out of
+  git, and `.gitignore` covers `*.tfstate`, `*.tfstate.*`, `*.tfvars`, `*.tfvars.json` and
+  `tfplan`.
+
+**Rotation is therefore not indicated by this finding alone.** It becomes indicated if the
+state has been within reach of something that copies files off the machine — an unencrypted
+disk, a cloud-synced folder, or a backup — which is a question about that machine, not about
+this repository. On WSL the distinction that matters is whether the checkout sits under
+`/mnt/c/...` (Windows filesystem, inside whatever OneDrive/backup scope the profile has) or on
+the WSL2 native filesystem (`~/...`, whose ext4 image OneDrive does not sync by default).
 
 - **Repo:** `iac`
-- **Location:** `terraform.tfstate`, `terraform.tfvars`, `versions.tf:1-10` (no
-  `backend`/`cloud` block anywhere), `.gitignore:1-16`.
-- **Issue:** There is no remote state backend. State lives only in
-  `terraform.tfstate` on the operator's disk — unencrypted, unlocked. By field
-  name (values were not extracted), it contains in cleartext: `db_password`,
-  `google_client_secret` (twice), `oidc_client_secret` (twice), `resend_api_key`
-  (twice), and the fully rendered cloud-init that embeds the DB password and the
-  Azure blob **SAS tokens** for `WIAB_MODELS_URL` / `WIAB_IMAGES_URL`.
-  `terraform.tfvars` holds the live populated values of `xoa_token` (Xen
-  Orchestra API token), `db_password`, both SAS URLs, `resend_api_key`,
-  `google_client_secret`, and `oidc_client_secret`. The `sensitive = true` flags
-  only mask CLI output; they do not encrypt state, and provisioner `triggers`
-  store values unmasked regardless.
-- **Impact:** Anyone who reads these files (a backup, a stolen laptop, an
-  accidental `git add -f`, a synced folder) obtains the hypervisor control-plane
-  token, the OAuth/OIDC client secrets, the email-provider key, the DB password,
-  and long-lived Azure SAS URLs — near-total compromise of the infrastructure and
-  its identity integrations. Local state also means no locking (concurrent-apply
-  corruption) and no audit trail. `.gitignore` does cover `*.tfstate*` /
-  `*.tfvars` / `tfplan` (confirmed never committed), but that is the only thing
-  preventing a leak, and one `-f` defeats it.
-- **Recommendation:** Move to a remote backend with encryption-at-rest and state
-  locking (Terraform Cloud, or S3+DynamoDB / `azurerm` blob with lock). Treat the
-  on-disk `tfstate*` / `tfvars` as **already exposed** and rotate every secret
-  they contain — XO token, DB password, Resend key, Google + OIDC client secrets
-  — and regenerate both blob SAS tokens. In the interim set the files to `0600`.
-  Keep secrets out of `triggers`/rendered templates; source them at apply time.
+- **Location:** `versions.tf:1-10` — no `backend`/`cloud` block anywhere; state defaults to a
+  local file.
+- **Issue that remains:** Terraform state is written to the operator's disk unencrypted and
+  unlocked. By field name (values were never extracted), a populated state contains
+  `db_password`, `google_client_secret`, `oidc_client_secret`, `resend_api_key`, and the
+  rendered cloud-init embedding the DB password and the Azure blob **SAS tokens** for
+  `WIAB_MODELS_URL` / `WIAB_IMAGES_URL`. A populated `terraform.tfvars` additionally holds
+  `xoa_token`, the Xen Orchestra API token. The `sensitive = true` flags only mask CLI output;
+  they do not encrypt state, and provisioner `triggers` store values unmasked regardless.
+- **Impact, restated honestly:** three distinct risks, only one of which is about disclosure.
+  1. *Confidentiality* — anything that reads that machine's disk (theft, malware, an
+     unintended sync or backup) obtains the hypervisor control-plane token, the OAuth/OIDC
+     client secrets, the email-provider key, the DB password, and long-lived SAS URLs. Bounded
+     by the security of one machine rather than by anything in this repository.
+  2. *Availability* — the state is the only record mapping this configuration to the live
+     XCP-ng resources, and it exists in exactly one place with no backup. Lose the WSL distro
+     and Terraform no longer knows the VM exists; the next `apply` tries to create a second one
+     and recovery is `terraform import`, by hand.
+  3. *Integrity* — no locking, so two concurrent applies can corrupt the state. Low probability
+     with one operator; not zero across two machines.
+- **Recommendation:** Move to a backend with encryption at rest, locking and versioned history
+  (Terraform Cloud, `azurerm` blob — this project already uses Azure storage for the VM images
+  — or S3 + DynamoDB). That addresses all three risks at once, and is the reason to do it
+  rather than the disclosure argument alone. Keep secrets out of `triggers` and rendered
+  templates; source them at apply time. Rotation is a decision to make from the state of the
+  operator's machine, not a blanket action implied by this finding.
 
 ### R1 — Per-IP rate limiting was bypassable in production (regression from this remediation)
 
@@ -726,7 +760,8 @@ explicit rather than inherited. Do not reuse the pattern for anything confidenti
   rendered in `terraform.tfstate`.
 - **Impact:** A pool operator with XO read access — or anyone with the state file
   (C3) — recovers the DB password and long-lived SAS tokens without touching the
-  guest, broadening the blast radius of C3 and H5.
+  guest. Note C3 was re-assessed on 2026-08-04 and is not an active leak, so the
+  practical path here is XO/pool access rather than the state file.
 - **Recommendation:** Avoid durable secrets in user-data; fetch them on the guest
   from a secrets manager at first boot, or inject via the SSH `remote-exec` path.
   Scope SAS tokens tightly (read-only, short TTL, single container).
@@ -1371,8 +1406,8 @@ untracked/ignored unless noted):
 
 | File | Repo | Contains | Tracked in git? |
 |------|------|----------|-----------------|
-| `terraform.tfstate` / `.backup` | `iac` | XO token, DB pw, OIDC/Google secrets, Resend key, SAS URLs (rendered) | No (gitignored) — but plaintext on disk, see C3 |
-| `terraform.tfvars` | `iac` | live values of all the above | No (gitignored) — see C3 |
+| `terraform.tfstate` / `.backup` | `iac` | XO token, DB pw, OIDC/Google secrets, Resend key, SAS URLs (rendered) | No — never in any commit; absent from the project tree as of 2026-08-04, held on the operator's machine only. See C3. |
+| `terraform.tfvars` | `iac` | live values of all the above | No — same as above. See C3. |
 | `dev/local/oidc.env` | `dev` | OIDC/Google client secrets, Resend key, dev owner password | No (gitignored) |
 | `frontend/.env` | `frontend` | non-secret build flags only | No (gitignored) |
 | `website/.env.local` | `website` | GA measurement ID only (non-secret) | No (gitignored) |
@@ -1440,11 +1475,12 @@ Ordered by risk-reduction per unit effort.
    along with the integration tests. Note the tests' route table is maintained by hand —
    axum's `Router` does not expose its routes, so a *new* route is not covered
    automatically.
-2. **Remediate infrastructure secret exposure (C3, H6, M9, M11).** Move Terraform
-   to an encrypted, locked remote backend; rotate every secret in the current
-   state/tfvars (XO token, DB password, Resend key, Google + OIDC client secrets,
-   both SAS tokens); make `wiab.env` `0640`; generate a strong DB password; stop
-   rendering durable secrets into cloud-init.
+2. **Remediate infrastructure secret handling (C3, H6, M9, M11).** Move Terraform to an
+   encrypted, locked remote backend — for state loss and concurrent-apply corruption as much
+   as for confidentiality; make `wiab.env` `0640`; generate a strong DB password; stop
+   rendering durable secrets into cloud-init. Blanket rotation is **not** implied: C3 was
+   re-assessed on 2026-08-04 and the state was never committed. Rotate if that machine's disk
+   has been within reach of a sync, a backup, or a theft.
 3. ~~**Fix the boot backdoor and credential logging (H1, L4, L5).**~~ **Done** (2026-08-03).
 4. ~~**Authenticate real-time media and harden SSO (H2, H3, H4, M3).**~~ **Done**
    (2026-08-03). Note the media half went further than "bind it to the participant": the
