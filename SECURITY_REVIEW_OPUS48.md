@@ -8,6 +8,9 @@ subsection) and I8 was updated accordingly. No C/H/M/L finding IDs changed.
 Amended: 2026-07-11 — C1 (unauthenticated state-changing REST endpoints) was remediated in the
 `backend` repo and is now marked **✅ Fixed** in its finding entry; the entry is retained for the
 historical record. No finding IDs changed.
+Amended: 2026-08-04 (later) — fourth remediation batch: **H6, H7, M7, M9, M10, M12, M13, M14,
+L19, L20** fixed. That closes every finding outside `app` and the deferred items. `iac` changes
+take effect on the operator's next provision; they are code, not applied state.
 Amended: 2026-08-04 — **C3 re-assessed and its severity reduced.** The original entry instructed
 the reader to treat the Terraform state as already exposed and rotate six credentials. That was
 asserted without establishing where the state lived or who could reach it. It was never
@@ -72,33 +75,39 @@ The second theme is **operational secret hygiene** on the infrastructure side
 the third is **missing rate limiting / brute-force protection** across the auth
 surface.
 
-### Remediation status (2026-08-03, after three batches)
+### Remediation status (2026-08-04, after four batches)
 
 | | Fixed | Accepted, documented | Open |
 |---|:--:|:--:|:--:|
-| Critical | C1, C2 | — | C3 |
-| High | H1, H2, H3, H4 | — | H5, H6, H7 (`iac`), H8, H9 (`app`) |
-| Medium | M1*, M2, M3, M4, M5, M6 | M8 | M7, M9–M14, M15, M16*, M17 |
-| Low | L1–L7, L9, L10, L12–L16 | L8, L11 | L17, L18 (`app`), L19, L20 (`iac`) |
-| Regression | R1 | — | — |
+| Critical | C1, C2 | — | C3\* |
+| High | H1, H2, H3, H4, H6, H7 | — | H5\*, H8, H9 (`app`) |
+| Medium | M1†, M2, M3, M4, M5, M6, M7, M9‡, M10, M12§, M13, M14 | M8 | M11, M15, M16†, M17 (`app`) |
+| Low | L1–L7, L9, L10, L12–L16, L19, L20 | L8, L11 | L17, L18 (`app`) |
+| Regression | R1\* | — | — |
 
-\* M1 is complete except progressive per-account lockout, which is deliberately deferred — it
-is itself a denial-of-service vector against a known username. M16 is reduced rather than
-closed: the non-breaking advisories are cleared in both web repos, and what remains needs a
-`vite --force` and a `react-router` major.
+\* Needs an action only the operator can take: C3 is a backend migration decision (re-assessed
+2026-08-04 — not an active leak); H5 needs a real certificate on Xen Orchestra before
+`xoa_insecure` can be `"false"`, and the repo default is already `"false"`; R1's fix is merged
+but takes effect on re-provision.
 
-**Every remaining open finding is in `app` or `iac`, with three exceptions:** M7 (security
-response headers, in all three web-facing places), M13/M14 (SHA-pin the third-party Firebase
-deploy action, and split build from deploy in the preview workflow), and the breaking half of
-M16.
+† M1 is complete except progressive per-account lockout, deliberately deferred — it is itself a
+denial-of-service vector against a known username. M16 is reduced, not closed: the non-breaking
+advisories are cleared in both web repos; what remains needs a `vite --force` and a
+`react-router` major.
 
-`app` is blocked behind native authentication, which is a feature and not a fix — see M15.
-`iac` needs a `terraform apply`, so it is the operator's call. **C3 was re-assessed on
-2026-08-04** and is not an active leak — the state was never committed and lives on a single
-operator machine; see its entry for what remains true and why rotation is not implied by the
-finding alone. That makes **H5, H6 and H7 the highest remaining risks**: TLS verification to the
-hypervisor is disabled, `wiab.env` is world-readable on the host, and sandbox microVMs can
-reach the host and LAN.
+‡ M9's validation is in place; rotating the live password is the operator's step.
+§ M12 covers the privileged artifacts (firecracker/jailer, nats-server). azcopy and the
+smoke-test images are still unverified — see the entry.
+
+**Everything still open is in `app`, or needs the operator.** The `app` findings — H8, H9, M15,
+M17, L17, L18 — are all blocked behind native authentication, which is a feature rather than a
+fix: it means OAuth 2.0 authorization-code + PKCE through the system browser, and this backend
+is an OIDC *relying party*, not a provider, so there is no `/oauth/authorize` for a native
+client yet. M11 (secrets rendered into cloud-init) is the one remaining non-`app` code finding;
+it needs a secrets-manager or SSH-injection path and was not attempted.
+
+All `iac` changes are code and take effect on the next provision. Nothing in this remediation
+was deployed.
 
 ### Finding counts by severity
 
@@ -425,6 +434,12 @@ filter did not cover it.
 
 ### H6 — `/etc/wiab/wiab.env` written world-readable with multiple plaintext secrets
 
+**Status: ✅ Fixed (2026-08-04)** — the file is now created `0640 root:wiab` with `install`
+*before* anything is written, rather than chmod'd afterwards: a later chmod leaves a window, and
+the `tee -a` appends from Terraform preserve whatever mode they find. The `wiab` group is
+created explicitly rather than relying on `useradd`'s `USERGROUPS_ENAB` default. Takes effect on
+re-provision.
+
 - **Repo:** `iac`
 - **Location:** `scripts/provision.sh:195-201` (`cat > /etc/wiab/wiab.env`, no
   `chmod`), appended by `main.tf:252-266` (`RESEND_API_KEY`,
@@ -443,6 +458,20 @@ filter did not cover it.
   after creation, and verify `tee -a` targets keep 0640.
 
 ### H7 — Untrusted microVM sandboxes are NAT'd onto the LAN with an accept-all forward policy
+
+**Status: ✅ Fixed (2026-08-04)** — `DEFAULT_FORWARD_POLICY` is back to `DROP`, with explicit
+rules: established traffic returns; guests are denied the host's primary address, RFC1918,
+link-local (cloud metadata), and each other — `172.16.0.0/12` covers the microVM subnet, so
+sandboxes are isolated between themselves as well; everything else is allowed out, so agents
+keep the internet they need for package installs and API calls.
+
+Scope, stated in the script so the next reader is not misled: these are FORWARD rules, governing
+*routed* traffic. A guest reaching the host on its own tap gateway address is INPUT, governed by
+ufw's default-deny plus what the firewall section opens — part of why M10 now restricts SSH.
+
+Verified against a real Ubuntu container rather than reasoned about: the `# End required lines`
+anchor the insertion depends on exists, and the resulting ruleset is accepted by
+`iptables-restore --test`.
 
 - **Repo:** `iac`
 - **Location:** `scripts/provision.sh:104-123`
@@ -671,6 +700,24 @@ is refused with 413.
 
 ### M7 — No HTTP security response headers (frontend, marketing site, and API)
 
+**Status: ✅ Fixed (2026-08-04)** — all three surfaces, each with a policy derived from what it
+actually loads rather than a shared template.
+
+- **backend** — `nosniff`, `X-Frame-Options: DENY`, `no-referrer`, and `default-src 'none'`. An
+  API serves no scripts or styles of its own, so the useful policy is "nothing". Applied as the
+  outermost layer, which a test caught: applied innermost, the headers were missing from the
+  401 and 413 that the middleware stack generates before reaching a handler — exactly the
+  responses a browser is most likely to be pointed at.
+- **frontend** — enforcing CSP with `frame-ancestors 'none'`, plus the other four. This is the
+  admin surface, so clickjacking protection is the one that earns its keep. `style-src` keeps
+  `'unsafe-inline'` because the app uses React `style={{…}}` in 74 places; `script-src` does not
+  need it. Verified by reading the headers off the running container.
+- **website** — the CSP ships as **`Content-Security-Policy-Report-Only`**, as this finding
+  recommends. It is derived from the real origins (googletagmanager, fonts.googleapis/gstatic,
+  the analytics endpoints) but has not been exercised in a browser, and a wrong CSP on the
+  marketing site is a blank page. Flip the key once a page load shows no violations. The other
+  four headers enforce immediately.
+
 - **Repos:** `frontend`, `website`, `backend`
 - **Location:** `frontend/nginx.conf:1-24` (no `add_header` at all);
   `website/firebase.json:11-30` (only `Cache-Control`); backend responses set no
@@ -718,6 +765,10 @@ explicit rather than inherited. Do not reuse the pattern for anything confidenti
 
 ### M9 — Weak default PostgreSQL password (`wiab`)
 
+**Status: ✅ Fixed (2026-08-04)** — `db_password` has no default and is validated: at least 16
+characters from `[A-Za-z0-9._~-]`, a charset that survives being interpolated into a
+`DATABASE_URL` and a shell-sourced env file. Rotating the live password is the operator's step.
+
 - **Repo:** `iac`
 - **Location:** `variables.tf:162-167` (default `"wiab"`), `terraform.tfvars:49`
   (live value is the default), used in `scripts/provision.sh:185,199` and
@@ -733,6 +784,12 @@ explicit rather than inherited. Do not reuse the pattern for anything confidenti
   ship a memorable default, and rotate the current value (it is in state/tfvars).
 
 ### M10 — SSH exposed to any source; password/root login not explicitly hardened
+
+**Status: ✅ Fixed (2026-08-04)** — a new `ssh_admin_cidr` restricts port 22 when set, with a
+warning logged at provision time when it is not, and a cloud-init drop-in sets
+`PasswordAuthentication no`, `KbdInteractiveAuthentication no` and `PermitRootLogin no`. That
+cannot lock anyone out: this host already uses key auth for both the provisioned user and
+Terraform's own connection.
 
 - **Repo:** `iac`
 - **Location:** `scripts/provision.sh:298` (`ufw allow OpenSSH`, any source),
@@ -768,6 +825,18 @@ explicit rather than inherited. Do not reuse the pattern for anything confidenti
 
 ### M12 — Downloaded binaries and kernels are not checksum- or signature-verified
 
+**Status: ✅ Fixed for the privileged artifacts (2026-08-04)** — firecracker/jailer and
+nats-server are now verified against SHA-256 digests pinned in the repository. Pinned there
+rather than fetched alongside the artifact: a checksum served by the same host as the file
+proves the download was not corrupted, not that it is the file intended.
+
+Verified against the real tarball — the check accepts the genuine file, rejects a corrupted one,
+and fails closed on an architecture with no pinned digest.
+
+**Still unverified:** azcopy (fetched via an `aka.ms` redirect) and the smoke-test kernel/rootfs
+(operator-supplied URLs, so no digest can be pinned in the repo). Both are lower value than the
+VMM — the smoke-test images boot once and are discarded.
+
 - **Repo:** `iac`
 - **Location:** `scripts/provision.sh:45-48` (firecracker/jailer tarball),
   `:63-64` (smoke-test `vmlinux` + `rootfs.ext4`), `scripts/wiab-deploy.sh:93-95`
@@ -785,6 +854,15 @@ explicit rather than inherited. Do not reuse the pattern for anything confidenti
   332-337`) — extend the same discipline to the VMM, kernel, and azcopy.
 
 ### M13 — Third-party GitHub Actions pinned by tag, not commit SHA
+
+**Status: ✅ Fixed for the one that matters (2026-08-04)** —
+`FirebaseExtended/action-hosting-deploy@v0` was a floating *major* tag on a third-party action
+receiving `FIREBASE_SERVICE_ACCOUNT`, in two workflows. Now pinned to the commit `v0` resolved
+to on 2026-08-04, so behaviour is unchanged. Note `v0` is *ahead* of the `v0.9.0` release tag,
+so pinning the release would have been a silent downgrade.
+
+The remaining unpinned actions are all `actions/*` (GitHub-owned) on major tags. Lower risk;
+not done.
 
 - **Repos:** all with CI (`website`, `app`, `docs`, `iac`, `backend`, `frontend`,
   `dev`)
@@ -805,6 +883,14 @@ explicit rather than inherited. Do not reuse the pattern for anything confidenti
   GitHub-owned `actions/*` are lower risk but ideally SHA-pinned too.
 
 ### M14 — Privileged Firebase service account exposed to PR/tag builds that run repo code
+
+**Status: ✅ Fixed (2026-08-04)** — the preview workflow is split in two: a `build` job that
+runs the branch's code (`npm ci`, `npm run build` — lockfile lifecycle scripts and Vite plugins
+from the pull request) and holds no credential, and a `deploy` job that holds the credential and
+runs none of the branch's code, receiving `dist` as an artifact. The deploy job does check out
+the repo, because the Firebase action reads `firebase.json` for `hosting.public` — config, not
+execution. A malicious build step can still tamper with what it produces; it can no longer read
+the credential. `release.yml` was already split.
 
 - **Repo:** `website`
 - **Location:** `.github/workflows/firebase-preview.yml` (`on: pull_request`,
@@ -1199,6 +1285,11 @@ matching the other repos.
 
 ### L19 — Secrets and map values interpolated into shell/SQL command strings
 
+**Status: ✅ Fixed for the password (2026-08-04)** — the DB password is passed to `psql` as a
+bound variable (`-v pw=… PASSWORD :'pw'`) instead of being interpolated into the SQL, and M9's
+charset validation stops metacharacters reaching the env file or the URL either. The remaining
+interpolations carry operator-supplied non-secret values.
+
 - **Repo:** `iac`
 - **Location:** `main.tf:159`
   (`ALTER ROLE wiab LOGIN PASSWORD '${var.db_password}'`), `:164`
@@ -1216,6 +1307,13 @@ matching the other repos.
   and constrain generated secrets to a safe charset.
 
 ### L20 — mediasoup binds 0.0.0.0 with a very wide UDP range open to any source
+
+**Status: ✅ Fixed (2026-08-04)** — the root cause was the backend, not the firewall: the SFU
+passed `port_range: None`, so mediasoup allocated anywhere in the ephemeral space and the
+firewall had no choice but to open ~50,000 ports. The backend now pins its range
+(`WIAB_MEDIASOUP_MIN_PORT`/`MAX_PORT`, default 40000-40999, ~500 concurrent peers) and the ufw
+rule opens exactly that — three orders of magnitude smaller. Keep the two in step; a mismatch
+shows up as media that negotiates and then carries no audio.
 
 - **Repo:** `iac`
 - **Location:** `scripts/provision.sh:196` (`WIAB_MEDIASOUP_LISTEN_IP=0.0.0.0`),
@@ -1485,20 +1583,26 @@ Ordered by risk-reduction per unit effort.
 4. ~~**Authenticate real-time media and harden SSO (H2, H3, H4, M3).**~~ **Done**
    (2026-08-03). Note the media half went further than "bind it to the participant": the
    participant is bound to a user in the aggregate, and the client no longer names one at all.
-5. **Harden the hypervisor and sandbox boundary (H5, H7, M12).** Enable XO TLS
-   verification; set the microVM FORWARD policy to DROP with scoped egress-only
-   rules; pin and checksum-verify the VMM, kernel, and azcopy downloads.
+5. ~~**Harden the hypervisor and sandbox boundary (H5, H7, M12).**~~ **Mostly done**
+   (2026-08-04): the microVM FORWARD policy is DROP with scoped rules, and the VMM and broker
+   are checksum-verified. Still open: XO TLS verification needs a real certificate on Xen
+   Orchestra (the repo default is already `"false"` — check your tfvars), and azcopy plus the
+   smoke-test images remain unverified.
 6. ~~**Add rate limiting and DoS bounds (M1, M2, M5, M6).**~~ **Done** (2026-08-03), except
    progressive per-account lockout: per-IP limiting plus an Argon2 concurrency cap addresses
    the exploitable part, and account lockout is itself a denial-of-service vector against a
    known username, so it wants deliberate design rather than a default.
-7. **Ship security headers and fix the client-side gate (M7, M8).** Add CSP /
-   frame-ancestors / nosniff / referrer-policy on the nginx frontend and Firebase
-   site; treat the pre-launch gate as UX only.
+7. ~~**Ship security headers and fix the client-side gate (M7, M8).**~~ **Done** (2026-08-04) —
+   headers on all three surfaces, with the website's CSP in Report-Only pending a browser
+   check. M8 accepted as the finding itself recommends.
 8. **Mobile release hardening (H8, H9, M15, M17).** Real release signing key;
    remove blanket cleartext + move to HTTPS/`wss://`; server-side auth for the
    app; enable R8 and stop distributing source maps.
-9. **CI/supply-chain hygiene (M13, M14, L13, L14, L15, M16).** SHA-pin
+9. ~~**CI/supply-chain hygiene (M13, M14, L13, L14, L15, M16).**~~ **Done** except the breaking
+   dependency upgrades (see M16) and SHA-pinning the GitHub-owned `actions/*`. Original text
+   follows.
+
+   **CI/supply-chain hygiene (M13, M14, L13, L14, L15, M16).** SHA-pin
    third-party actions; separate untrusted-build from secret-holding deploy jobs;
    scope `contents: write` to the release job; env-indirect tag values; pin the
    mailpit image; run `npm audit`/`cargo audit` in CI and clear the frontend
