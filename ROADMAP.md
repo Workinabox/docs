@@ -120,3 +120,31 @@ When an item is done, overwrite it in place — do not remove it. The numbering 
     {}]] })`) plus a dev dependency, buying automatic memoization, at the cost of an
     extra Babel pass in the otherwise-SWC build — and note the compiler bails out
     silently on components that break the Rules of React, which is why (b) comes first.
+40. Decide on dependency update automation across the repos. Today there is none: no
+    `dependabot.yml` and no Renovate config in any of the eight repos (docs, backend,
+    frontend, app, iac, website, dev, sw-dev-team), so dependencies only move when
+    someone remembers to move them. They have drifted accordingly — `frontend/package.json`
+    was last touched 2026-06-09 (`513aa2c`), and by 2026-08-04 `npm outdated` showed 18
+    packages behind, in three distinct categories worth keeping separate:
+    (a) **stale lockfile** — prettier, typescript-eslint, `@types/react(-dom)`, eslint,
+    `@testing-library/user-event` are all within the existing semver ranges; `npm update`
+    picks them up with no manifest edit. No reason for these to be behind.
+    (b) **deliberately pinned exact** — react/react-dom `19.1.1`, vite `7.1.1`,
+    `@vitejs/plugin-react-swc` `4.0.0` carry no caret, pinned by `513aa2c` to match the
+    website repo. A real choice, not neglect — but the alignment has already drifted
+    (website is on `vite: ^7.3.5`). Worth confirming the pinning is still wanted.
+    (c) **genuine majors** — typescript 5→7 (the native compiler rewrite), vite 7→8,
+    vitest 3→4, eslint 9→10, jsdom 25→29, globals 15→17, jest-dom 6→7,
+    react-refresh 0.4→0.5. These need judgment, not a command; being behind on majors
+    is often correct.
+    The real argument for automation is security patches, not currency: a CVE in a
+    transitive dep is the case where "nobody ran the command" gets expensive. The
+    counter-argument is PR volume — eight repos spanning npm, Cargo, Terraform, GitHub
+    Actions and React Native could mean dozens of PRs a week, and the noise is how these
+    get switched off. Dependabot is ~10 lines and native to GitHub but groups poorly;
+    Renovate needs more config but can group patches into one weekly PR, auto-merge what
+    passes CI, and hold majors for review — the reason to prefer it here. Auto-merge is
+    only as trustworthy as the CI behind it: `frontend` has lint + typecheck + test, the
+    other repos have not been assessed. Low-risk trial: one repo (`frontend`), grouped
+    weekly, auto-merge patch-only, majors held. Roll out if it earns its keep after a
+    month; delete one file if it doesn't.
