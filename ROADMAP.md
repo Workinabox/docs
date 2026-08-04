@@ -104,3 +104,19 @@ When an item is done, overwrite it in place — do not remove it. The numbering 
     knob. Filenames are immutable (new weights ⇒ new filename). Locally:
     `backend/scripts/fetch-models.sh`. (In the iac repo: `scripts/wiab-deploy.sh`, `main.tf`,
     `variables.tf` `models`, `templates/cloud-init.yaml.tftpl`.)
+39. Decide on the React Compiler for the frontend. Today it is OFF: `vite.config.ts`
+    calls `react()` with no options, and neither `babel-plugin-react-compiler` nor
+    `eslint-plugin-react-compiler` is a dependency. Nor is anything done by hand to
+    compensate — across 63 files in `frontend/src/` there are exactly three memoization
+    calls, all in `features/auth/SessionContext.tsx`. Probably fine for now (small app,
+    no measured perf issue), but it should be a decision rather than an omission.
+    Suggested order: (a) fix `SessionContext` — it memoizes two callbacks with
+    `useCallback` but then passes a fresh object literal as the context value, so every
+    `useSession()` consumer re-renders on every provider render and the `useCallback`s
+    buy nothing; a `useMemo` on the value object fixes it and is worth doing either way.
+    (b) Bump `eslint-plugin-react-hooks` 5 → 6 and turn on its compiler rules — zero
+    build cost, and it tells us how compiler-ready the code actually is. (c) Then decide
+    on the compiler itself: one line (`react({ plugins: [['babel-plugin-react-compiler',
+    {}]] })`) plus a dev dependency, buying automatic memoization, at the cost of an
+    extra Babel pass in the otherwise-SWC build — and note the compiler bails out
+    silently on components that break the Rules of React, which is why (b) comes first.
