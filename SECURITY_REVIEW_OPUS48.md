@@ -81,7 +81,7 @@ surface.
 |---|:--:|:--:|:--:|
 | Critical | C1, C2 | — | C3\* |
 | High | H1, H2, H3, H4, H6, H7 | — | H5\*, H8, H9 (`app`) |
-| Medium | M1†, M2, M3, M4, M5, M6, M7, M9‡, M10, M12§, M13, M14 | M8 | M11, M15, M16†, M17 (`app`) |
+| Medium | M1†, M2, M3, M4, M5, M6, M7, M9‡, M10, M11, M12§, M13, M14 | M8 | M15, M16†, M17 (`app`) |
 | Low | L1–L7, L9, L10, L12–L16, L19, L20 | L8, L11 | L17, L18 (`app`) |
 | Regression | R1\* | — | — |
 
@@ -99,12 +99,11 @@ advisories are cleared in both web repos; what remains needs a `vite --force` an
 § M12 covers the privileged artifacts (firecracker/jailer, nats-server). azcopy and the
 smoke-test images are still unverified — see the entry.
 
-**Everything still open is in `app`, or needs the operator.** The `app` findings — H8, H9, M15,
-M17, L17, L18 — are all blocked behind native authentication, which is a feature rather than a
-fix: it means OAuth 2.0 authorization-code + PKCE through the system browser, and this backend
-is an OIDC *relying party*, not a provider, so there is no `/oauth/authorize` for a native
-client yet. M11 (secrets rendered into cloud-init) is the one remaining non-`app` code finding;
-it needs a secrets-manager or SSH-injection path and was not attempted.
+**Everything still open is in `app`, or needs the operator.** No code finding outside `app`
+remains. The `app` findings — H8, H9, M15, M17, L17, L18 — are all blocked behind native
+authentication, which is a feature rather than a fix: it means OAuth 2.0 authorization-code +
+PKCE through the system browser, and this backend is an OIDC *relying party*, not a provider,
+so there is no `/oauth/authorize` for a native client yet.
 
 All `iac` changes are code and take effect on the next provision. Nothing in this remediation
 was deployed.
@@ -807,6 +806,17 @@ Terraform's own connection.
   `PasswordAuthentication no` + `PermitRootLogin no` via a cloud-init drop-in.
 
 ### M11 — Secrets rendered into cloud-init user-data (readable via the hypervisor and state)
+
+**Status: ✅ Fixed (2026-08-04)** — the DB password and both Azure SAS URLs are gone from
+user-data. Nothing new was built to replace them: the Terraform provisioners already pushed the
+same values over SSH on every subsequent deploy, so first boot now uses that path instead of a
+second, less safe one. The DB role is created without a password and `provision_db` sets it
+afterwards; `wiab-deploy` is deferred to `deploy_app`, which pushes the blob URLs first. Every
+provisioner begins with `cloud-init status --wait`, so the deferral is to a step that was
+already guaranteed to follow.
+
+This removes the secrets from the rendered cloud-init *inside* Terraform state. It does not
+remove the input variables from state — that is C3.
 
 - **Repo:** `iac`
 - **Location:** `main.tf:36-60` + `templates/cloud-init.yaml.tftpl:28-35`
@@ -1573,7 +1583,10 @@ Ordered by risk-reduction per unit effort.
    along with the integration tests. Note the tests' route table is maintained by hand —
    axum's `Router` does not expose its routes, so a *new* route is not covered
    automatically.
-2. **Remediate infrastructure secret handling (C3, H6, M9, M11).** Move Terraform to an
+2. ~~**Remediate infrastructure secret handling (C3, H6, M9, M11).**~~ **Done except C3**
+   (2026-08-04), which was re-assessed as not an active leak. Original text follows.
+
+   **Remediate infrastructure secret handling (C3, H6, M9, M11).** Move Terraform to an
    encrypted, locked remote backend — for state loss and concurrent-apply corruption as much
    as for confidentiality; make `wiab.env` `0640`; generate a strong DB password; stop
    rendering durable secrets into cloud-init. Blanket rotation is **not** implied: C3 was
