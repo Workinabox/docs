@@ -29,6 +29,18 @@ summary, the secret inventory, M11 and the roadmap were corrected to match. No I
 Amended: 2026-08-04 (later) — fourth remediation batch: **H6, H7, M7, M9, M10, M12, M13, M14,
 L19, L20** fixed. That closes every finding outside `app` and the deferred items. `iac` changes
 take effect on the operator's next provision; they are code, not applied state.
+Amended: 2026-08-09 — **first deployment.** The demo host was rebuilt from scratch
+(`terraform destroy` + `apply`) on backend `v0.1.16` / frontend `v0.1.10`, so every `iac` and
+code fix above is now *applied*, not just committed. Operator items 1, 2 and 5 are done: R1's
+nginx `X-Forwarded-For` overwrite is live and verified (a rotating spoofed header still hits the
+429), the breaking tfvars changes were made, and the Postgres password was rotated by the fresh
+provision (M9). H6 (`wiab.env` `0640 root:wiab`), H7 (FORWARD `DROP`) and the microVM smoke boot
+were verified on the host. The from-scratch path had never run since the M11 change and exposed
+three `iac` deploy bugs, all fixed (see `iac` PR #19). **H5 stands, and by an operator decision
+is accepted for now** (`xoa_insecure` stays `"true"`; a real XO certificate is scheduled
+separately). **New:** the public port-80 forward was removed, so certbot's HTTP-01 challenge
+times out and the demo is **HTTP-only** — TLS needs a DNS-01 certificate or the forward restored
+(operator decision, tracked below). Item 4 (website CSP) is unchanged.
 Reviewer: automated multi-agent security audit (Claude Code)
 Scope: all nine repositories in the `Workinabox` GitHub organisation
 Method: full source read of every repo plus targeted static analysis; every
@@ -49,11 +61,12 @@ act on it.
 
 | # | Action | Why it matters |
 |---|--------|----------------|
-| 1 | **Re-provision, or edit `/etc/nginx/sites-available/wiab` and reload nginx** | Until then, per-IP rate limiting on the auth endpoints is **bypassable in production** with a forged `X-Forwarded-For`. The fix is merged but unapplied. See R1. |
-| 2 | **Update `terraform.tfvars` before the next apply** | Breaking — see the next subsection. `plan` will fail without it. |
-| 3 | **Check whether `xoa_insecure` is `"true"` in your live tfvars** | The repo default is already `"false"`. If yours is `"true"`, H5 is open and needs a real certificate on Xen Orchestra — not a code change. |
+| 1 | ~~Re-provision for R1~~ **Done 2026-08-09** | Per-IP rate limiting is live and verified — a rotating spoofed `X-Forwarded-For` still hits the 429. |
+| 2 | ~~Update `terraform.tfvars`~~ **Done 2026-08-09** | Version pins, strong `db_password`, `owner_password`, `vm_images_version = "v2"` all set; `plan` is clean. |
+| 3 | **`xoa_insecure` is `"true"` — accepted for now** | H5 open by operator decision (2026-08-09). Needs a real certificate on Xen Orchestra, then flip to `"false"`. |
 | 4 | **Flip the website CSP from `Content-Security-Policy-Report-Only` to `Content-Security-Policy`** | It ships in report-only because the policy is derived from source but was never exercised in a browser. Load a page, confirm no console violations, then enforce. `website/firebase.json`. |
-| 5 | **Rotate the live Postgres password** | M9's validation is in place, but the old value (`wiab`) is still whatever the running host has. |
+| 5 | ~~Rotate the live Postgres password~~ **Done 2026-08-09** | The from-scratch rebuild created the DB fresh with the new strong password (M9). |
+| 6 | **Restore TLS on the demo host** | The public port-80 forward was removed, so certbot's HTTP-01 challenge times out and the site is HTTP-only. The backend sets `Secure` cookies (base URL is `https://`), so a browser session will not persist over plain HTTP. Fix with a DNS-01 certificate (no inbound needed) or by restoring the forward. New 2026-08-09. |
 
 ### Breaking configuration changes
 
