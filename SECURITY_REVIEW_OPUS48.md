@@ -38,9 +38,16 @@ provision (M9). H6 (`wiab.env` `0640 root:wiab`), H7 (FORWARD `DROP`) and the mi
 were verified on the host. The from-scratch path had never run since the M11 change and exposed
 three `iac` deploy bugs, all fixed (see `iac` PR #19). **H5 stands, and by an operator decision
 is accepted for now** (`xoa_insecure` stays `"true"`; a real XO certificate is scheduled
-separately). **New:** the public port-80 forward was removed, so certbot's HTTP-01 challenge
-times out and the demo is **HTTP-only** — TLS needs a DNS-01 certificate or the forward restored
-(operator decision, tracked below). Item 4 (website CSP) is unchanged.
+separately). Item 4 (website CSP) is unchanged.
+Amended: 2026-08-09 (later) — **TLS restored.** Removing the public port-80 forward had broken
+certbot's HTTP-01 challenge, leaving the demo HTTP-only (which blocks registration — the backend
+sets `Secure` cookies over its `https://` base URL). Fixed by switching to the **DNS-01**
+challenge (no inbound port): a real Let's Encrypt certificate for `demo.workinabox.ai` is
+installed and serving (443 + 80→301 redirect verified; owner login holds its Secure cookie).
+DNS is at one.com (no API), so issuance/renewal are manual via the new `wiab-cert` helper — cert
+expires 2026-11-07 and does **not** auto-renew. See `iac` PR #20. Reaching the host by name on
+the LAN uses a per-machine hosts entry (`192.168.1.4 demo.workinabox.ai`), documented in the iac
+README.
 Reviewer: automated multi-agent security audit (Claude Code)
 Scope: all nine repositories in the `Workinabox` GitHub organisation
 Method: full source read of every repo plus targeted static analysis; every
@@ -66,7 +73,7 @@ act on it.
 | 3 | **`xoa_insecure` is `"true"` — accepted for now** | H5 open by operator decision (2026-08-09). Needs a real certificate on Xen Orchestra, then flip to `"false"`. |
 | 4 | **Flip the website CSP from `Content-Security-Policy-Report-Only` to `Content-Security-Policy`** | It ships in report-only because the policy is derived from source but was never exercised in a browser. Load a page, confirm no console violations, then enforce. `website/firebase.json`. |
 | 5 | ~~Rotate the live Postgres password~~ **Done 2026-08-09** | The from-scratch rebuild created the DB fresh with the new strong password (M9). |
-| 6 | **Restore TLS on the demo host** | The public port-80 forward was removed, so certbot's HTTP-01 challenge times out and the site is HTTP-only. The backend sets `Secure` cookies (base URL is `https://`), so a browser session will not persist over plain HTTP. Fix with a DNS-01 certificate (no inbound needed) or by restoring the forward. New 2026-08-09. |
+| 6 | ~~Restore TLS on the demo host~~ **Done 2026-08-09** | Switched to the DNS-01 challenge (no inbound port). Real Let's Encrypt cert installed and serving; 443 + redirect + Secure-cookie login verified. Manual issuance/renewal via `wiab-cert` (one.com has no API); **expires 2026-11-07, no auto-renew**. See `iac` PR #20. |
 
 ### Breaking configuration changes
 
