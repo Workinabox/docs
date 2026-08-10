@@ -48,6 +48,13 @@ DNS is at one.com (no API), so issuance/renewal are manual via the new `wiab-cer
 expires 2026-11-07 and does **not** auto-renew. See `iac` PR #20. Reaching the host by name on
 the LAN uses a per-machine hosts entry (`192.168.1.4 demo.workinabox.ai`), documented in the iac
 README.
+Amended: 2026-08-10 — **C3 verification block corrected.** Its "Verified 2026-08-04:
+no tfstate/tfvars exist" bullet was invalidated by the 2026-08-09 apply (recorded in the
+amendment above), which wrote `terraform.tfstate`, `.backup` and `terraform.tfvars` into `iac/`.
+Re-verified against the tree: the files now exist, still git-ignored, still never committed, and
+there is still no remote backend. Severity unchanged (local + git-ignored); the "files don't
+exist" basis is removed. No IDs changed. (Part of the workspace-wide docs-truth pass — see
+`DOCS_AUDIT.md`.)
 Reviewer: automated multi-agent security audit (Claude Code)
 Scope: all nine repositories in the `Workinabox` GitHub organisation
 Method: full source read of every repo plus targeted static analysis; every
@@ -329,20 +336,29 @@ existing project→org check. Regression tests drive the real router.
 **Status: ⚠️ Open, but re-assessed — this is not an active leak.** The original entry told the
 reader to treat the state as already exposed and rotate six credentials. That instruction was
 based on the files being present at review time, without establishing where they lived or who
-could reach them. Verified 2026-08-04:
+could reach them.
 
-- No `terraform.tfstate`, `terraform.tfstate.backup` or `terraform.tfvars` exists anywhere in
-  the project tree on the development machine — only the committed
-  `terraform.tfvars.example`, which holds no values.
-- Neither file has **ever** been added in any commit on any branch (`git log --all
-  --diff-filter=A`). The only match in history is the `.example`.
-- `.terraform/` contains provider plugins only: `terraform init` has run in this checkout,
-  `apply` has not.
-- CI never touches state or secrets — `ci.yml` runs `fmt`, `init -backend=false` and
-  `validate`.
-- The live state lives on the single operator's Windows/WSL machine, deliberately kept out of
-  git, and `.gitignore` covers `*.tfstate`, `*.tfstate.*`, `*.tfvars`, `*.tfvars.json` and
-  `tfplan`.
+Re-verified 2026-08-10 (the 2026-08-04 block below said these files did **not** exist; that was
+true then but the 2026-08-09 first deployment — `terraform destroy` + `apply` — created them, so
+the earlier bullet is corrected here):
+
+- `iac/terraform.tfstate` (68 KB), `iac/terraform.tfstate.backup` (61 KB) and
+  `iac/terraform.tfvars` (5 KB) **now exist** in the working tree on the operator's machine,
+  written by the 08-09 apply. They contain real secrets (state holds resource attributes;
+  tfvars holds the DB password, Resend key, SAS URLs).
+- They have still **never** been committed on any branch — `.gitignore` covers `*.tfstate`,
+  `*.tfstate.*`, `*.tfvars`, `*.tfvars.json`, `tfplan`; only `terraform.tfvars.example`
+  (no values) is tracked.
+- The structural gap is unchanged: `versions.tf` has no `backend`/`cloud` block, so state is a
+  local file only — no encryption at rest, no locking, no remote history.
+- CI never touches state or secrets — `ci.yml` runs `fmt`, `init -backend=false` and `validate`.
+
+The severity reasoning still holds: the files are local and git-ignored, so this is exposure
+*only* if the operator's machine syncs them off (unencrypted disk, OneDrive scope, backup) — a
+question about that machine, and on WSL specifically about whether the checkout sits under
+`/mnt/c/...` (Windows/OneDrive scope) or the WSL2 native filesystem. But "the files don't exist"
+is no longer a valid basis for that reasoning, and the state-loss / concurrent-apply risks (a
+single un-backed-up local state file) are now the stronger arguments for a remote backend.
 
 **Rotation is therefore not indicated by this finding alone.** It becomes indicated if the
 state has been within reach of something that copies files off the machine — an unencrypted
