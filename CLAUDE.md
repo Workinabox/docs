@@ -41,3 +41,11 @@
 - Favor smaller commits. Single responsability that concentrate on one concept/part/story/feature/struct
 - Single responsability principle always
 - Never EVER deploy anything to anywhere without being explicitly told to. Things like terraform apply for example.
+
+<!-- The bullets above are the shared core, identical across every repo's CLAUDE.md — edit all copies together. Below is docs-specific. -->
+
+## docs-specific
+
+- Start from `OVERVIEW.md` (current reality) and `README.md` (the index). Reality claims live in `OVERVIEW.md`; plans in `ROADMAP.md` — don't restate the system's behaviour in other docs, link OVERVIEW.
+- Living docs are amended in place with a dated note; frozen/superseded ones carry a banner. Keep markdownlint clean (`.markdownlint-cli2.jsonc`; MD013 is intentionally off).
+- When code and a doc disagree, the code wins — fix the doc and, if it's a contradiction worth recording, note it in `DOCS_AUDIT.md`.
