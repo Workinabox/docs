@@ -37,17 +37,15 @@ When an item is done, overwrite it in place — do not remove it. The numbering 
     V1–V3) idempotently against a fresh DB and exercising the repos — alongside the Mailpit
     and mock-OIDC integration tests against service containers. (`.github/workflows/ci.yml`,
     `wiab-inf/tests/postgres_integration.rs`.)
-14. Structured logging with correlation IDs threaded through every crate — BUILT
-    (branch, not yet merged). The `wiab-telemetry` crate emits JSON logs to stdout
-    with `trace_id`/`span_id` inlined and a distinct always-on `audit` stream; the
-    Python runtime gets trace-correlated structlog. On the `otel-instrumentation`
-    branches (backend + sw-dev-team), pending merge.
-15. OpenTelemetry tracing wired from inbound request to outbound call — BUILT
-    (branch, not yet merged). Full OTLP export of traces/metrics/logs behind
-    `OTEL_EXPORTER_OTLP_ENDPOINT`, W3C traceparent from inbound HTTP through NATS
-    and into launched sandbox guests, GenAI/DB/VM/SFU instrumentation. Deferred
-    scope and how to turn it on: `TELEMETRY_FOLLOWUP.md`. On the
-    `otel-instrumentation` branches, pending merge.
+14. Structured logging with correlation IDs threaded through every crate — DONE.
+    The `wiab-telemetry` crate emits JSON logs to stdout with `trace_id`/`span_id`
+    inlined and a distinct always-on `audit` stream; the Python runtime gets
+    trace-correlated structlog. Merged to `backend` and `sw-dev-team` main.
+15. OpenTelemetry tracing wired from inbound request to outbound call — DONE.
+    Full OTLP export of traces/metrics/logs behind `OTEL_EXPORTER_OTLP_ENDPOINT`,
+    W3C traceparent from inbound HTTP through NATS and into launched sandbox
+    guests, GenAI/DB/VM/SFU instrumentation. How to turn it on and what was
+    deferred: `TELEMETRY_FOLLOWUP.md`. Merged to `backend` and `sw-dev-team` main.
 16. Single staging environment reachable from a public URL
 17. Infrastructure-as-code for the staging environment
 18. Secrets management (no secrets in repo, fetched at boot)
