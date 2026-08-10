@@ -2,6 +2,17 @@
 
 Date: 2026-07-04
 
+> **SUPERSEDED (2026-08-10). Do not read the findings below as open.**
+> This is a frozen 2026-07-04 snapshot with **no status tracking** — every
+> finding still reads as unresolved, but many are fixed. The current source of
+> truth is [`SECURITY_REVIEW_OPUS48.md`](SECURITY_REVIEW_OPUS48.md), which carries
+> per-finding statuses and an amendment log. Notably, this review's two most
+> severe items are **fixed**: `F-002` (broad unauthenticated JSON API) and
+> `F-003` (private repo content exposed via JSON APIs) correspond to OPUS48 `C1`
+> and `C2`, closed 2026-07-11 and 2026-08-03 respectively. For the status of any
+> other finding here, cross-check OPUS48 rather than assuming it is open — this
+> document is retained for the historical record only and is not updated.
+
 ## Scope and Method
 
 This review covered the repositories present under `/home/fgos/projects/workinabox`:
