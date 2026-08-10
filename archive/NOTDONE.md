@@ -1,5 +1,12 @@
 # Not Done
 
+> **ARCHIVED / SUPERSEDED (2026-08-10).** This 2026-06-09 audit is two months
+> stale and lists shipped systems (git hosting, tasks, teams, pull requests, VM
+> sandboxes, telemetry) as not-started. It is kept for history only. For the
+> current doc-vs-code picture see [`../DOCS_AUDIT.md`](../DOCS_AUDIT.md); for what
+> the system is today see [`../OVERVIEW.md`](../OVERVIEW.md). Do not rely on the
+> statuses below.
+
 A snapshot of functionality that is **proposed / planned / discussed in the docs but has no implementation in code yet**. Generated 2026-06-09 from an audit of every markdown doc across the repos against the actual code (`backend/`, `frontend/src/`, `website/src/`, `app/`, `dev/src/`).
 
 Two buckets: **(A)** not started at all — nothing in code anywhere; **(B)** started but hollow — a route/page/control exists but renders a placeholder/stub or has no behavior.
