@@ -16,7 +16,12 @@ When an item is done, overwrite it in place — do not remove it. The numbering 
    `git`. Push + the write API are gated by a per-repo push token. (`git_http.rs`,
    `git_ssh.rs`, `git2_backend.rs`; `GitBackend` port in `wiab-core`.)
 6. Workinabox has a pipeline/actions system (GitHub Actions–style)
-7. Design a Workinabox project management system (epics, stories, tasks, etc., Notion-style) before building it
+7. Design a Workinabox project management system (epics, stories, tasks, etc., Notion-style) before building it.
+   NOTE (2026-08-10): a richer 7-concept planning ontology
+   (Objective/Requirement/Specification/Check/Work/Defect) was drafted for this
+   in `PLANNING_MODEL.md` and **rejected** — the shipped `Work`/`Done` model
+   stands, and that draft (plus its `TEMP-PLANNING.md` transcript) was deleted.
+   The management surface itself is folded into the frontend rethink (#41).
 8. Self-host workinabox and start using it to build workinabox
 9. CI runs build, test, fmt, and clippy on every PR across all repos
 10. One-command local dev bootstrap (backend + app + dev tooling)
@@ -32,8 +37,17 @@ When an item is done, overwrite it in place — do not remove it. The numbering 
     V1–V3) idempotently against a fresh DB and exercising the repos — alongside the Mailpit
     and mock-OIDC integration tests against service containers. (`.github/workflows/ci.yml`,
     `wiab-inf/tests/postgres_integration.rs`.)
-14. Structured logging with correlation IDs threaded through every crate
-15. OpenTelemetry tracing wired from inbound request to outbound call
+14. Structured logging with correlation IDs threaded through every crate — BUILT
+    (branch, not yet merged). The `wiab-telemetry` crate emits JSON logs to stdout
+    with `trace_id`/`span_id` inlined and a distinct always-on `audit` stream; the
+    Python runtime gets trace-correlated structlog. On the `otel-instrumentation`
+    branches (backend + sw-dev-team), pending merge.
+15. OpenTelemetry tracing wired from inbound request to outbound call — BUILT
+    (branch, not yet merged). Full OTLP export of traces/metrics/logs behind
+    `OTEL_EXPORTER_OTLP_ENDPOINT`, W3C traceparent from inbound HTTP through NATS
+    and into launched sandbox guests, GenAI/DB/VM/SFU instrumentation. Deferred
+    scope and how to turn it on: `TELEMETRY_FOLLOWUP.md`. On the
+    `otel-instrumentation` branches, pending merge.
 16. Single staging environment reachable from a public URL
 17. Infrastructure-as-code for the staging environment
 18. Secrets management (no secrets in repo, fetched at boot)
@@ -55,7 +69,11 @@ When an item is done, overwrite it in place — do not remove it. The numbering 
     key to a principal, with PAT token-scope capping. (`wiab-core/access/`,
     `authbox-core/rbac/`, `authorization_service.rs`, `http_api.rs`.)
 21. API versioning convention and a contract test harness
-22. In-process domain event bus with a transactional outbox
+22. In-process domain event bus with a transactional outbox — DONE. Aggregate
+    events are written to an outbox in the same transaction as the state change
+    (`outbox_writes.rs`), a background publisher drains them at-least-once to NATS
+    (`outbox_publisher.rs`, `postgres_outbox.rs`, `nats_messaging.rs`); the event
+    name doubles as the broker subject. ~21 subjects on the wire today.
 23. Background job runner for async work
 24. Error reporting and alerting on staging
 25. Mobile app CI: signed builds distributed to TestFlight and Play internal —
@@ -73,14 +91,24 @@ When an item is done, overwrite it in place — do not remove it. The numbering 
 27. Production environment promoted from staging, with backup/restore drilled
 28. Feature flags
 29. First end-to-end thin slice of an agent turn (Input → LLM → Response, no retrieval)
-30. Task aggregate and board persistence
+30. Task aggregate and board persistence — DONE. `Task` (7-state lifecycle:
+    created/assigned/in_progress/blocked/escalated/completed/failed) and `Board`
+    are persisted (`postgres_task_repository.rs`, `postgres_board_repository.rs`)
+    with claim/start/block/resume/escalate/complete/fail transitions over HTTP.
+    No web UI yet — the board page is a record CRUD (see OVERVIEW.md).
 31. Retrieval pipeline: ingestion, chunking, vector store, hybrid search
 32. Full inner-loop step with retrieval, tool execution, and reflection
 33. Security gates (Input, Retrieval, Execution) with audit trail
 34. Multi-agent communication (delegation, consultation, escalation, notification)
 35. Memory consolidation across episodic, semantic, and procedural stores
-36. Return to meetings: capture, transcription, and event extraction feeding the agent model
-37. Voice-first UX in the mobile app on top of the meeting and agent stacks
+36. Return to meetings: capture, transcription, and event extraction feeding the agent model.
+    PARKED (2026-08-10). The backend subsystem is complete (SFU, whisper STT,
+    llama replies, minutes) but has no working client, and TTS is a stub. Parked
+    until after the docs-truth pass (#41) and the frontend rethink (#42).
+37. Voice-first UX in the mobile app on top of the meeting and agent stacks.
+    PARKED (2026-08-10). The mobile app is non-functional against the backend
+    since 2026-08-03 (TLS + auth + protocol drift; SECURITY_REVIEW_OPUS48 M15).
+    Reviving it needs a native OAuth story first. Parked with #36.
 38. ML models must be a hard, fail-fast dependency — not silently disabled. — DONE.
     Both models now load through one symmetric contract: each is independently toggled
     by `WIAB_LLAMA_ENABLED` / `WIAB_WHISPER_ENABLED`, eager-loaded at boot, and HARD-FAILS
@@ -148,3 +176,16 @@ When an item is done, overwrite it in place — do not remove it. The numbering 
     other repos have not been assessed. Low-risk trial: one repo (`frontend`), grouped
     weekly, auto-merge patch-only, majors held. Roll out if it earns its keep after a
     month; delete one file if it doesn't.
+41. Documentation truth pass — IN PROGRESS (2026-08-10). Make every doc, README,
+    and agent-guidance file consistent with the code as it actually is: a
+    workspace-wide audit (`DOCS_AUDIT.md`), a current-reality overview
+    (`OVERVIEW.md`), a `docs/` index, corrected `.github` architecture docs (the
+    stale `ui/` Leptos repo removed), security-review statuses reconciled, and the
+    per-repo wrong-instruction fixes catalogued in the audit's contradiction
+    register. Prerequisite for #42.
+42. Frontend rethink — NOT STARTED. Re-architect the web app around directing
+    agentic work and living in your own code/specs (the "ditch GitHub" bar),
+    keeping the React/Vite/Redux stack. Light up the dark backend surfaces (task
+    board, teams, pull requests, repo/file browsing) that the current
+    record-CRUD console does not expose. Design decisions recorded when picked up;
+    inputs captured during the docs pass. Follows #41.
