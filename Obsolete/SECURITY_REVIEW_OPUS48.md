@@ -29,6 +29,32 @@ summary, the secret inventory, M11 and the roadmap were corrected to match. No I
 Amended: 2026-08-04 (later) — fourth remediation batch: **H6, H7, M7, M9, M10, M12, M13, M14,
 L19, L20** fixed. That closes every finding outside `app` and the deferred items. `iac` changes
 take effect on the operator's next provision; they are code, not applied state.
+Amended: 2026-08-09 — **first deployment.** The demo host was rebuilt from scratch
+(`terraform destroy` + `apply`) on backend `v0.1.16` / frontend `v0.1.10`, so every `iac` and
+code fix above is now *applied*, not just committed. Operator items 1, 2 and 5 are done: R1's
+nginx `X-Forwarded-For` overwrite is live and verified (a rotating spoofed header still hits the
+429), the breaking tfvars changes were made, and the Postgres password was rotated by the fresh
+provision (M9). H6 (`wiab.env` `0640 root:wiab`), H7 (FORWARD `DROP`) and the microVM smoke boot
+were verified on the host. The from-scratch path had never run since the M11 change and exposed
+three `iac` deploy bugs, all fixed (see `iac` PR #19). **H5 stands, and by an operator decision
+is accepted for now** (`xoa_insecure` stays `"true"`; a real XO certificate is scheduled
+separately). Item 4 (website CSP) is unchanged.
+Amended: 2026-08-09 (later) — **TLS restored.** Removing the public port-80 forward had broken
+certbot's HTTP-01 challenge, leaving the demo HTTP-only (which blocks registration — the backend
+sets `Secure` cookies over its `https://` base URL). Fixed by switching to the **DNS-01**
+challenge (no inbound port): a real Let's Encrypt certificate for `demo.workinabox.ai` is
+installed and serving (443 + 80→301 redirect verified; owner login holds its Secure cookie).
+DNS is at one.com (no API), so issuance/renewal are manual via the new `wiab-cert` helper — cert
+expires 2026-11-07 and does **not** auto-renew. See `iac` PR #20. Reaching the host by name on
+the LAN uses a per-machine hosts entry (`192.168.1.4 demo.workinabox.ai`), documented in the iac
+README.
+Amended: 2026-08-10 — **C3 verification block corrected.** Its "Verified 2026-08-04:
+no tfstate/tfvars exist" bullet was invalidated by the 2026-08-09 apply (recorded in the
+amendment above), which wrote `terraform.tfstate`, `.backup` and `terraform.tfvars` into `iac/`.
+Re-verified against the tree: the files now exist, still git-ignored, still never committed, and
+there is still no remote backend. Severity unchanged (local + git-ignored); the "files don't
+exist" basis is removed. No IDs changed. (Part of the workspace-wide docs-truth pass — see
+`DOCS_AUDIT.md`.)
 Reviewer: automated multi-agent security audit (Claude Code)
 Scope: all nine repositories in the `Workinabox` GitHub organisation
 Method: full source read of every repo plus targeted static analysis; every
@@ -49,11 +75,12 @@ act on it.
 
 | # | Action | Why it matters |
 |---|--------|----------------|
-| 1 | **Re-provision, or edit `/etc/nginx/sites-available/wiab` and reload nginx** | Until then, per-IP rate limiting on the auth endpoints is **bypassable in production** with a forged `X-Forwarded-For`. The fix is merged but unapplied. See R1. |
-| 2 | **Update `terraform.tfvars` before the next apply** | Breaking — see the next subsection. `plan` will fail without it. |
-| 3 | **Check whether `xoa_insecure` is `"true"` in your live tfvars** | The repo default is already `"false"`. If yours is `"true"`, H5 is open and needs a real certificate on Xen Orchestra — not a code change. |
+| 1 | ~~Re-provision for R1~~ **Done 2026-08-09** | Per-IP rate limiting is live and verified — a rotating spoofed `X-Forwarded-For` still hits the 429. |
+| 2 | ~~Update `terraform.tfvars`~~ **Done 2026-08-09** | Version pins, strong `db_password`, `owner_password`, `vm_images_version = "v2"` all set; `plan` is clean. |
+| 3 | **`xoa_insecure` is `"true"` — accepted for now** | H5 open by operator decision (2026-08-09). Needs a real certificate on Xen Orchestra, then flip to `"false"`. |
 | 4 | **Flip the website CSP from `Content-Security-Policy-Report-Only` to `Content-Security-Policy`** | It ships in report-only because the policy is derived from source but was never exercised in a browser. Load a page, confirm no console violations, then enforce. `website/firebase.json`. |
-| 5 | **Rotate the live Postgres password** | M9's validation is in place, but the old value (`wiab`) is still whatever the running host has. |
+| 5 | ~~Rotate the live Postgres password~~ **Done 2026-08-09** | The from-scratch rebuild created the DB fresh with the new strong password (M9). |
+| 6 | ~~Restore TLS on the demo host~~ **Done 2026-08-09** | Switched to the DNS-01 challenge (no inbound port). Real Let's Encrypt cert installed and serving; 443 + redirect + Secure-cookie login verified. Manual issuance/renewal via `wiab-cert` (one.com has no API); **expires 2026-11-07, no auto-renew**. See `iac` PR #20. |
 
 ### Breaking configuration changes
 
@@ -309,20 +336,29 @@ existing project→org check. Regression tests drive the real router.
 **Status: ⚠️ Open, but re-assessed — this is not an active leak.** The original entry told the
 reader to treat the state as already exposed and rotate six credentials. That instruction was
 based on the files being present at review time, without establishing where they lived or who
-could reach them. Verified 2026-08-04:
+could reach them.
 
-- No `terraform.tfstate`, `terraform.tfstate.backup` or `terraform.tfvars` exists anywhere in
-  the project tree on the development machine — only the committed
-  `terraform.tfvars.example`, which holds no values.
-- Neither file has **ever** been added in any commit on any branch (`git log --all
-  --diff-filter=A`). The only match in history is the `.example`.
-- `.terraform/` contains provider plugins only: `terraform init` has run in this checkout,
-  `apply` has not.
-- CI never touches state or secrets — `ci.yml` runs `fmt`, `init -backend=false` and
-  `validate`.
-- The live state lives on the single operator's Windows/WSL machine, deliberately kept out of
-  git, and `.gitignore` covers `*.tfstate`, `*.tfstate.*`, `*.tfvars`, `*.tfvars.json` and
-  `tfplan`.
+Re-verified 2026-08-10 (the 2026-08-04 block below said these files did **not** exist; that was
+true then but the 2026-08-09 first deployment — `terraform destroy` + `apply` — created them, so
+the earlier bullet is corrected here):
+
+- `iac/terraform.tfstate` (68 KB), `iac/terraform.tfstate.backup` (61 KB) and
+  `iac/terraform.tfvars` (5 KB) **now exist** in the working tree on the operator's machine,
+  written by the 08-09 apply. They contain real secrets (state holds resource attributes;
+  tfvars holds the DB password, Resend key, SAS URLs).
+- They have still **never** been committed on any branch — `.gitignore` covers `*.tfstate`,
+  `*.tfstate.*`, `*.tfvars`, `*.tfvars.json`, `tfplan`; only `terraform.tfvars.example`
+  (no values) is tracked.
+- The structural gap is unchanged: `versions.tf` has no `backend`/`cloud` block, so state is a
+  local file only — no encryption at rest, no locking, no remote history.
+- CI never touches state or secrets — `ci.yml` runs `fmt`, `init -backend=false` and `validate`.
+
+The severity reasoning still holds: the files are local and git-ignored, so this is exposure
+*only* if the operator's machine syncs them off (unencrypted disk, OneDrive scope, backup) — a
+question about that machine, and on WSL specifically about whether the checkout sits under
+`/mnt/c/...` (Windows/OneDrive scope) or the WSL2 native filesystem. But "the files don't exist"
+is no longer a valid basis for that reasoning, and the state-loss / concurrent-apply risks (a
+single un-backed-up local state file) are now the stronger arguments for a remote backend.
 
 **Rotation is therefore not indicated by this finding alone.** It becomes indicated if the
 state has been within reach of something that copies files off the machine — an unencrypted

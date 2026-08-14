@@ -21,7 +21,18 @@ sense to someone who has a box and nothing else — no repo paths, no crate name
 | [`Installation/`](Installation/) | Operators | Standing up a box and connecting third-party services |
 | [`Configuration/`](Configuration/) | Operators | Tuning a box that is already running |
 | [`Development/`](Development/) | Us | Deploying, building, CI, and working on the code |
-| [`obsolete/`](obsolete/) | — | Archive. Read-only, and possibly inaccurate |
+| [`Obsolete/`](Obsolete/) | — | Archive. Read-only, and possibly inaccurate |
+
+A few documents describe the repository as a whole rather than one audience, and stay at the
+root.
+
+## Current state
+
+| Page | What it is |
+| --- | --- |
+| [OVERVIEW.md](OVERVIEW.md) | What workinabox is today: subsystems, the ten repos, surfaces, and what is not built yet. **Reality claims belong here** — other pages should link it rather than restate what the system does. |
+| [DOCS_AUDIT.md](DOCS_AUDIT.md) | The 2026-08-10 doc-vs-code audit: verdicts, contradiction register, resolved decisions. |
+| [TELEMETRY_FOLLOWUP.md](TELEMETRY_FOLLOWUP.md) | Telemetry work deliberately deferred, and how to turn telemetry on. |
 
 ## Installation
 
@@ -62,5 +73,5 @@ Documentation that lives next to the code it describes, rather than here:
   behavior so the next person can re-check it.
 - **Don't fork a maintained document.** When something is already documented next to the code,
   link to it and cover only what it doesn't.
-- **Nothing in [`obsolete/`](obsolete/) is a source of truth**, and nothing there may be edited.
-  See its [README](obsolete/README.md).
+- **Nothing in [`Obsolete/`](Obsolete/) is a source of truth**, and nothing there may be edited.
+  See its [README](Obsolete/README.md).

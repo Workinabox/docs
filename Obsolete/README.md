@@ -14,6 +14,13 @@ archived here. They are kept for reference only.
   simply describe things that were never built. It does not necessarily reflect the
   current reality of the workinabox system or organisation.
 
+## Archiving something new
+
+When you move a document here, give it a **dated banner at the top** saying it is archived, why,
+and what supersedes it — the way [`NOTDONE.md`](NOTDONE.md) does. A folder README only warns
+readers who arrive through the folder; a banner travels with the file, so it still warns someone
+who opened it from a search result or a direct link.
+
 ## How to use these files
 
 Reading them is fine and often useful — they capture past intent, design discussions,
