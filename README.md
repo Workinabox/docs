@@ -1,53 +1,77 @@
-# workinabox docs
+# workinabox documentation
 
-Start with **[OVERVIEW.md](OVERVIEW.md)** — what the system actually is today.
-Everything else defers to it for current-reality claims.
+## Who each folder is for
 
-## Conventions
+Documentation here is split by **whether the reader has the source tree**, not by topic.
 
-- **Living** docs are amended in place. When a fact changes, edit it and leave a
-  dated note (the style `SECURITY_REVIEW_OPUS48.md` uses — a short amendment line
-  — is the model). Don't let a living doc silently drift; that is the failure
-  this whole set was just cleaned up from (see `DOCS_AUDIT.md`).
-- **Frozen** docs are point-in-time snapshots; they carry a date and are not
-  updated (superseded ones get a banner pointing at what replaced them).
-- Reality claims belong in `OVERVIEW.md`; forward-looking plans in `ROADMAP.md`.
-  A doc that needs to assert "the system does X" should link OVERVIEW rather than
-  restate it.
+> **The test:** would someone running a workinabox box, who will never clone the repo, need this?
+>
+> If yes, it belongs in `Installation/` or `Configuration/`. If no, it belongs in `Development/`.
 
-## Index
+A useful second check: if a page cites a repository path, a CI workflow, a Terraform variable or
+our own infrastructure, it is developer documentation regardless of what it is about. Deploying
+our demo box and building sandbox images are both *operations we perform*, not things a box owner
+does.
 
-### Current reality & plan (living)
+`Installation/` and `Configuration/` are a **product surface**. Everything in them should make
+sense to someone who has a box and nothing else — no repo paths, no crate names, no CI.
 
-| Doc | What it is |
-|---|---|
-| [OVERVIEW.md](OVERVIEW.md) | What workinabox is today: subsystems, the ten repos, surfaces, and what is not built yet. |
-| [ROADMAP.md](ROADMAP.md) | Ordered build log. Items marked DONE in place; numbering preserved as history. |
+| Folder | Audience | Contents |
+| --- | --- | --- |
+| [`Installation/`](Installation/) | Operators | Standing up a box and connecting third-party services |
+| [`Configuration/`](Configuration/) | Operators | Tuning a box that is already running |
+| [`Development/`](Development/) | Us | Deploying, building, CI, and working on the code |
+| [`Obsolete/`](Obsolete/) | — | Archive. Read-only, and possibly inaccurate |
+
+A few documents describe the repository as a whole rather than one audience, and stay at the
+root.
+
+## Current state
+
+| Page | What it is |
+| --- | --- |
+| [OVERVIEW.md](OVERVIEW.md) | What workinabox is today: subsystems, the ten repos, surfaces, and what is not built yet. **Reality claims belong here** — other pages should link it rather than restate what the system does. |
 | [DOCS_AUDIT.md](DOCS_AUDIT.md) | The 2026-08-10 doc-vs-code audit: verdicts, contradiction register, resolved decisions. |
-
-### Design & reference (living)
-
-| Doc | What it is |
-|---|---|
-| [DDD.md](DDD.md) | The domain-driven layering the backend follows (core/app/inf/binary). |
-| [AGENT_MODEL.md](AGENT_MODEL.md) | The Task/Turn/Step/Stage agent design. Note: parts (tracing UI, security gates) are design, not yet built. |
-| [AUTH-DOCS.md](AUTH-DOCS.md) | The identity/auth system as implemented (authbox). Matches code. |
-| [IDENTITY_AND_ACCESS_PLAN.md](IDENTITY_AND_ACCESS_PLAN.md) | Roles/scopes and the intended settings screens. |
-| [SANDBOX_VM.md](SANDBOX_VM.md) | Firecracker microVM sandbox model. |
 | [TELEMETRY_FOLLOWUP.md](TELEMETRY_FOLLOWUP.md) | Telemetry work deliberately deferred, and how to turn telemetry on. |
 
-### Security reviews
+## Installation
 
-| Doc | What it is |
-|---|---|
-| [SECURITY_REVIEW_OPUS48.md](SECURITY_REVIEW_OPUS48.md) | Living security review with per-finding status + an amendment log. The current source of truth. |
-| [SECURITY_REVIEW_GPT55.md](SECURITY_REVIEW_GPT55.md) | Frozen earlier review, superseded by OPUS48 (see its banner). |
+| Page | What it covers |
+| --- | --- |
+| [Microsoft Entra](Installation/MICROSOFT_ENTRA.md) | Enterprise SSO — registering the app in a customer's tenant and the `email_verified` requirement |
+| [Google OAuth](Installation/GOOGLE_OAUTH.md) | "Continue with Google" — creating the client and how account linking behaves |
+| [Email delivery](Installation/EMAIL_DELIVERY.md) | Resend or SMTP, and why unconfigured email fails silently |
 
-### Archive (frozen / superseded)
+## Configuration
 
-| Doc | What it is |
-|---|---|
-| [archive/NOTDONE.md](archive/NOTDONE.md) | 2026-06-09 doc-vs-code audit, superseded by DOCS_AUDIT.md. |
+| Page | What it covers |
+| --- | --- |
+| [Configuring your box](Configuration/SETTINGS.md) | Every operator setting, grouped by goal: public URL and TLS, sign-in, email, the first administrator, storage, meetings, logging |
 
-`CLAUDE.md` in this directory is shared agent-guidance (identical across repos),
-not a doc — see `DOCS_AUDIT.md` for the note on those.
+## Development
+
+| Page | What it covers |
+| --- | --- |
+| [Local development stack](Development/LOCAL_DEVELOPMENT.md) | The compose stack, Mailpit, the mock OIDC provider |
+| [Environment variables](Development/ENVIRONMENT_VARIABLES.md) | Complete reference — every variable the system reads, by component, with the file that resolves it |
+| [Terraform configuration](Development/TERRAFORM_TFVARS.md) | `terraform.tfvars` — what is required, what is validated, and the constraints validation cannot express |
+| [Sandbox VM images](Development/SANDBOX_VM_IMAGES.md) | Building rootfs images in CI and getting them onto a host |
+
+Documentation that lives next to the code it describes, rather than here:
+
+- [`backend/CLAUDE.md`](../backend/CLAUDE.md) — backend conventions
+- [`sw-dev-team/docs/ENV.md`](../sw-dev-team/docs/ENV.md) — the agent team's own environment
+- [`iac/images/README.md`](../iac/images/README.md) — how sandbox images are built
+- [`dev/local/README.md`](../dev/local/README.md) — the local stack reference
+
+## Writing docs here
+
+- **Pick the folder by audience, using the test above.** A page in the wrong folder is worse than
+  a missing one, because an operator will act on it.
+- **Verify against the code, not against other documents.** Several pages here were written by
+  checking the source and found the previous documentation wrong. Cite the file that decides the
+  behavior so the next person can re-check it.
+- **Don't fork a maintained document.** When something is already documented next to the code,
+  link to it and cover only what it doesn't.
+- **Nothing in [`Obsolete/`](Obsolete/) is a source of truth**, and nothing there may be edited.
+  See its [README](Obsolete/README.md).

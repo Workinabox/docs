@@ -7,7 +7,7 @@ actually is, prompted by accumulated drift: architecture docs describing repos
 that no longer exist, a product defined three incompatible ways, a security
 review whose fixed criticals still read as open, and setup instructions that
 point at the wrong files. This document is the report; the corrections it calls
-for are tracked in [ROADMAP.md](ROADMAP.md) and the per-repo commits that
+for are tracked in [ROADMAP.md](Obsolete/ROADMAP.md) and the per-repo commits that
 followed it.
 
 The workspace is **ten** git repositories: nine siblings — `backend`,

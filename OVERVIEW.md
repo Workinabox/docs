@@ -6,7 +6,7 @@ subsystem's status changes).
 This describes the system **as it actually is right now**, not where it is
 headed. It exists to replace three conflicting product descriptions scattered
 across the repos (see [DOCS_AUDIT.md](DOCS_AUDIT.md)). Forward-looking plans
-live in [ROADMAP.md](ROADMAP.md); anything not yet built is listed at the end
+live in [ROADMAP.md](Obsolete/ROADMAP.md); anything not yet built is listed at the end
 here so no reader mistakes intention for reality.
 
 ## In one paragraph
