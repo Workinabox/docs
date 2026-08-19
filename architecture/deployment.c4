@@ -1,0 +1,93 @@
+// Deployment, from the iac repo and dev/local/docker-compose.yml.
+//
+// The production domain is a Terraform variable substituted at provision time
+// (iac/variables.tf:108, applied by provision.sh:422) with no committed value, so no
+// hostname is asserted anywhere below.
+
+deployment {
+
+  // --- production: one VM on XCP-ng, provisioned through Xen Orchestra -------------------
+  // iac/providers.tf:3 uses the xenorchestra provider; main.tf:72 declares one
+  // xenorchestra_vm.host from an Ubuntu 24.04 template. Nested virtualisation is enabled
+  // (main.tf:116) because agent sandboxes run as Firecracker microVMs inside.
+
+  prod = host 'Production' {
+    description 'XCP-ng hypervisor, nested virtualisation enabled'
+
+    box = vm 'wiab VM' {
+      description 'Ubuntu 24.04, static LAN IP outside the DHCP pool'
+
+      nginx = proc 'nginx' {
+        description 'Terminates TLS, serves /var/www/wiab, proxies /api to 127.0.0.1:8080'
+        instanceOf wiab.frontend
+      }
+
+      instanceOf wiab.backend
+      instanceOf wiab.gitssh
+      instanceOf wiab.db
+      instanceOf wiab.repos
+      instanceOf wiab.models
+      instanceOf wiab.sandbox
+    }
+  }
+
+  // NATS is not placed here: it is feature-flagged by WIAB_NATS_ENABLED and the iac scripts
+  // do not provision it, so whether a box runs it is deployment config this model cannot
+  // determine from source.
+
+  // --- local development: dev/local/docker-compose.yml -----------------------------------
+  // Not a scaled-down production. It adds two fakes with no production counterpart, and
+  // publishes the frontend on a different port.
+
+  local = host 'Local development' {
+    description 'Docker Compose on a developer machine'
+
+    devFrontend = proc 'frontend' {
+      description 'nginx-unprivileged, published on 3000, listening on 8080'
+      instanceOf wiab.frontend
+    }
+    devBackend = proc 'backend' {
+      description 'Waits for the database to be healthy'
+      instanceOf wiab.backend
+      instanceOf wiab.gitssh
+    }
+    devDb = proc 'db' {
+      instanceOf wiab.db
+    }
+    devNats = proc 'nats' {
+      instanceOf wiab.nats
+    }
+    devMail = proc 'mailpit' {
+      description 'Captures outbound mail instead of delivering it'
+      instanceOf email
+    }
+    devOidc = proc 'oidc-mock' {
+      description 'Stands in for an OIDC provider'
+      instanceOf entOidc
+    }
+  }
+
+  // --- the marketing site, deployed independently of any box ----------------------------
+
+  hosting = host 'Firebase Hosting' {
+    description 'live channel on a v* tag; an expiring preview channel per PR'
+    instanceOf wiab.website
+  }
+}
+
+views {
+  deployment view production {
+    title 'Production deployment'
+    include prod, prod.**
+  }
+
+  deployment view localdev {
+    title 'Local development'
+    include local, local.**
+  }
+
+  deployment view marketing {
+    title 'Marketing site hosting'
+    include hosting, hosting.**
+  }
+}

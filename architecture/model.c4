@@ -1,0 +1,188 @@
+// People, the Workinabox system and its containers, and the external systems it talks to.
+//
+// Repositories deliberately NOT modelled as containers:
+//   iac         - Terraform and provisioning; sourced by deployment.c4 instead.
+//   dev         - operator tooling (Ratatui CLI). OVERVIEW.md: "Not an end-user surface."
+//   sw-dev-team - agent-team definitions, not running software.
+//   assets      - design handoff. No build, no package, no imports; consumed by hand-porting,
+//                 per "Ported from assets/..." in frontend/src/index.css:3 and
+//                 website/src/components/LogoMark.tsx:5.
+//   docs        - this repository.  .github - org-level documentation.
+// These omissions are deliberate. Please do not "fix" them by adding containers.
+//
+// Elements are named after the repository they come from, never after a description of one.
+// The org's docs call `frontend` "the web console" in seven places; that phrasing belongs in
+// a description, not in an element's identity.
+
+model {
+
+  // --- people ---------------------------------------------------------------------------
+  // Roles are verified from code; the persona labels are inferred, as there is no documented
+  // persona list.
+
+  owner = person 'Owner' {
+    description 'Administers users, roles and credentials'
+    // is_owner in frontend/src/features/auth/types.ts; RequireOwner guard in App.tsx
+  }
+
+  member = person 'Member' {
+    description 'Works with works, boards, agents, repos and pipelines'
+    // non-owner route set in frontend/src/App.tsx; roles in features/access/types.ts
+  }
+
+  participant = person 'Meeting participant' {
+    description 'Joins voice meetings alongside agents'
+    // MeetingRole and ParticipantKind in app/src/meetingProtocol.ts
+  }
+
+  visitor = person 'Visitor' {
+    description 'Reads the marketing site'
+    // isPreviewer, VITE_PREVIEW_ALLOWLIST in website/src/lib/launch.ts
+  }
+
+  operator = person 'Operator' {
+    description 'Provisions and deploys a self-hosted box'
+  }
+
+  // Agents are not people. User.kind is "human" | "agent" — an agent is a row in the same
+  // users table — so agents live inside the system boundary, as sandbox below.
+
+  // --- the system -----------------------------------------------------------------------
+
+  wiab = system 'Workinabox' {
+    description 'Runs agentic software work on your own hardware'
+
+    backend = container 'backend' {
+      technology 'Rust, axum'
+      description 'REST API, git HTTP and meeting signalling'
+      // single `wiab` binary; always TLS, self-signs when WIAB_TLS_CERT/KEY unset
+      // (backend/src/main.rs:139)
+    }
+
+    gitssh = container 'git SSH' {
+      technology 'Rust, russh'
+      description 'Git over SSH on its own port'
+      // spawned alongside the HTTPS server, backend/src/main.rs:78-91
+    }
+
+    frontend = container 'frontend' {
+      technology 'React 19, Vite, Redux Toolkit'
+      description 'Browser console for administering a box'
+      // static files behind nginx; the org's docs call this "the web console"
+    }
+
+    app = container 'app' {
+      #parked
+      technology 'React Native 0.81'
+      description 'Single-screen mobile voice-meeting client'
+      // bare React Native, NOT Expo. Broken since 2026-08-03: cleartext http, no
+      // credentials, and the signalling protocol has since changed (app/README.md).
+    }
+
+    website = container 'website' {
+      technology 'React 19, Vite, i18next'
+      description 'Public marketing site; never calls the backend'
+    }
+
+    db = database 'Postgres' {
+      technology 'PostgreSQL'
+      description 'Aggregates, sessions, credentials, outbox'
+      // persistence is switchable: bootstrap.rs:78-101 takes `memory` or `postgres`, and
+      // wiab-inf carries in_memory_* beside every postgres_* repository
+    }
+
+    nats = container 'NATS' {
+      technology 'NATS'
+      description 'Carries events drained from the outbox'
+      // feature-flagged by WIAB_NATS_ENABLED
+    }
+
+    repos = database 'Git repositories' {
+      technology 'Filesystem, git2'
+      description 'Bare repositories under WIAB_GIT_ROOT'
+    }
+
+    models = database 'Inference models' {
+      technology 'Filesystem'
+      description 'GGUF and Whisper weights on local disk'
+      // inference is LOCAL — llama-cpp-2 and whisper-rs. There is no hosted LLM API.
+    }
+
+    sandbox = container 'Agent sandbox' {
+      technology 'Docker or Firecracker'
+      description 'Isolated runtime an agent team executes in'
+      // docker_runtime.rs / firecracker_runtime.rs via vm_runtime_dispatch.rs
+    }
+  }
+
+  // --- external systems -------------------------------------------------------------------
+
+  googleOidc = external 'Google' {
+    description 'OIDC provider for Google sign-in'
+  }
+
+  entOidc = external 'Enterprise OIDC provider' {
+    description 'Generic OIDC connection, known to code only as `enterprise`'
+    // which product sits behind it is deployment config (WIAB_OIDC_ISSUER) — not named here
+  }
+
+  email = external 'Email provider' {
+    description 'SMTP or Resend, per WIAB_EMAIL_PROVIDER'
+  }
+
+  otlp = external 'OTLP collector' {
+    description 'Receives traces, metrics and logs'
+    // HTTP/protobuf, never gRPC — see the opentelemetry-otlp features in Cargo.toml
+  }
+
+  firebase = external 'Firebase' {
+    description 'Auth for the pre-launch gate, and hosting'
+  }
+
+  ga = external 'Google Analytics 4' {
+    description 'Consent-gated page views'
+  }
+
+  releases = external 'GitHub Releases' {
+    description 'The artefact channel for deploys'
+  }
+
+  // --- relationships ----------------------------------------------------------------------
+
+  owner -> frontend 'administers organisations and access'
+  member -> frontend 'works with works, boards and agents'
+  member -> gitssh 'pushes and fetches' 'SSH'
+  participant -> app 'joins meetings'
+  visitor -> website 'reads marketing pages'
+  operator -> backend 'provisions and operates'
+
+  // Same-origin: host nginx strips /api and proxies to https://127.0.0.1:8080
+  // (iac/scripts/provision.sh:407), which is why there is no CORS config.
+  frontend -> backend 'REST CRUD, session cookie + CSRF header' 'HTTPS/JSON'
+  frontend -> backend 'redirects to OIDC start' 'HTTP 302'
+
+  app -> backend 'lists meetings' 'HTTP/JSON' {
+    #parked
+  }
+  app -> backend 'signalling and media' 'WebSocket + WebRTC' {
+    #parked
+  }
+
+  backend -> db 'reads and writes' 'SQL'
+  backend -> nats 'publishes outbox events' 'NATS'
+  backend -> repos 'reads and writes repositories' 'libgit2'
+  backend -> models 'loads weights for local inference'
+  backend -> sandbox 'provisions and drives agent teams'
+  sandbox -> backend 'claims tasks, reports progress' 'HTTPS/JSON'
+
+  gitssh -> repos 'serves fetch and push' 'libgit2'
+  gitssh -> db 'authenticates SSH public keys' 'SQL'
+
+  backend -> googleOidc 'authorisation-code flow' 'OIDC'
+  backend -> entOidc 'authorisation-code flow' 'OIDC'
+  backend -> email 'sends invitations and resets' 'SMTP or HTTPS'
+  backend -> otlp 'exports telemetry' 'OTLP/HTTP'
+
+  website -> firebase 'authenticates previewers' 'HTTPS'
+  website -> ga 'sends page views after consent' 'HTTPS'
+}

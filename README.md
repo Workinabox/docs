@@ -21,6 +21,7 @@ sense to someone who has a box and nothing else — no repo paths, no crate name
 | [`Installation/`](Installation/) | Operators | Standing up a box and connecting third-party services |
 | [`Configuration/`](Configuration/) | Operators | Tuning a box that is already running |
 | [`Development/`](Development/) | Us | Deploying, building, CI, and working on the code |
+| [`architecture/`](architecture/) | Us | The C4 model of the org, in Structurizr DSL. Not pages — a model |
 | [`Obsolete/`](Obsolete/) | — | Archive. Read-only, and possibly inaccurate |
 
 A few documents describe the repository as a whole rather than one audience, and stay at the
