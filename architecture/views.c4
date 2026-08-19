@@ -1,0 +1,35 @@
+// Views. One per C4 level.
+// Deployment is covered by deployment.c4.
+
+views {
+
+  view index {
+    title 'System context'
+    description 'Workinabox in its environment: who uses it and what it depends on'
+    include *
+  }
+
+  view containers of wiab {
+    title 'Containers'
+    description 'The deployable units of a box, plus the marketing site'
+    include *
+  }
+
+  view backendComponents of wiab.backend {
+    title 'Backend components'
+    description 'Eight crates in two families. The arrows are the dependency rule — inward only'
+    include *
+  }
+
+  view frontendComponents of wiab.frontend {
+    title 'Frontend components'
+    description 'Feature folders under src/features'
+    include *
+  }
+
+  view appComponents of wiab.app {
+    title 'App components'
+    description 'Three elements, because that is what the code contains'
+    include *
+  }
+}

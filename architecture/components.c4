@@ -1,0 +1,131 @@
+// Component level. Only three containers get one, because only three have code that
+// supports it honestly.
+//
+// Crate file counts are from `find crates/<name>/src -name '*.rs' | wc -l`, given to convey
+// relative weight — not a metric to maintain.
+
+model {
+
+  // --- backend: eight crates in two families, verified against [workspace] in Cargo.toml ---
+  // The dependency rule from .github/SOFTWARE_ARCHITECTURE.md is
+  //     wiab -> wiab-inf -> wiab-app -> wiab-core
+  // and it is encoded as relationships below, so the diagram shows the rule.
+
+  extend wiab.backend {
+
+    bin = component 'wiab' {
+      technology 'Rust'
+      description 'Config, TLS, wiring, and the axum router'
+      // backend/src/{main,bootstrap,config,lib}.rs
+    }
+
+    inf = component 'wiab-inf' {
+      technology 'Rust — 71 files'
+      description 'Adapters: HTTP, git, repositories, runtimes, SFU, inference'
+    }
+
+    app = component 'wiab-app' {
+      technology 'Rust — 37 files'
+      description 'One application service per aggregate, plus the outbox'
+    }
+
+    core = component 'wiab-core' {
+      technology 'Rust — 125 files'
+      description 'The domain, and the repository traits that are its ports'
+    }
+
+    authInf = component 'authbox-inf' {
+      technology 'Rust — 19 files'
+      description 'Argon2, OIDC relying party, stores, email senders'
+    }
+
+    authApp = component 'authbox-app' {
+      technology 'Rust — 5 files'
+      description 'Identity application services'
+    }
+
+    authCore = component 'authbox-core' {
+      technology 'Rust — 34 files'
+      description 'auth, credential and rbac'
+    }
+
+    telemetry = component 'wiab-telemetry' {
+      technology 'Rust — 6 files'
+      description 'OpenTelemetry wiring'
+    }
+
+    agent = component 'wiab-agent' {
+      #notbuilt
+      technology 'Rust — 1 file'
+      description 'A workspace member, essentially unstarted'
+    }
+
+    bin -> inf 'wires adapters to ports'
+    inf -> app 'drives application services'
+    app -> core 'operates on the domain through its ports'
+
+    bin -> authInf 'wires identity adapters'
+    authInf -> authApp 'drives identity services'
+    authApp -> authCore 'operates on the identity domain'
+
+    inf -> authApp 'authenticates and authorises'
+    bin -> telemetry 'initialises tracing and metrics'
+  }
+
+  // --- frontend feature folders --------------------------------------------------------
+  // Twelve directories exist under src/features; `counter` is Vite template residue and is
+  // not modelled. /traces, /rooms and /security render <Placeholder> and are not components.
+
+  extend wiab.frontend {
+    feAuth = component 'Auth & session' {
+      description 'Sign-in, reset, invites, and the OIDC redirects'
+    }
+    feContext = component 'Org & project context' {
+      description 'The active selection that scopes everything else'
+    }
+    feWorks = component 'Works'
+    feBoards = component 'Boards'
+    feAgents = component 'Agents' {
+      description 'Records, plus activate and deactivate'
+    }
+    feRepos = component 'Repositories' {
+      description 'Records and visibility; no code browsing'
+    }
+    fePipelines = component 'Pipelines'
+    feUsers = component 'Users & credentials' {
+      description 'Invites, SSH keys, access tokens. Owner-only'
+    }
+    feAccess = component 'Access & roles' {
+      description 'Role assignments across scopes. Owner-only'
+    }
+    feStatus = component 'Status'
+    feStub = component 'Stub backend' {
+      #devonly
+      description 'In-memory fake, shaped like the backend by convention only'
+    }
+
+    feAuth -> feContext 'establishes the session'
+    feContext -> feWorks 'scopes'
+    feContext -> feBoards 'scopes'
+    feContext -> feAgents 'scopes'
+    feContext -> feRepos 'scopes'
+    feContext -> fePipelines 'scopes'
+  }
+
+  // --- app: three elements, because that is what the code contains ----------------------
+
+  extend wiab.app {
+    screen = component 'Meeting screen' {
+      description 'The whole UI and all logic, in one 1047-line file'
+    }
+    signalling = component 'Signalling client' {
+      description 'Typed envelopes over the /signal WebSocket'
+    }
+    conf = component 'Backend config' {
+      description 'Hardcoded hosts; no environment variables'
+    }
+
+    screen -> signalling 'sends and receives envelopes'
+    signalling -> conf 'reads the socket URL'
+  }
+}

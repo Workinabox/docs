@@ -1,0 +1,49 @@
+// Element kinds, tags and colours for the Workinabox model.
+// The workshop palette comes from assets/visual-identity/handoff, hand-ported into
+// frontend/src/index.css and website/src/styles/tokens.css.
+
+specification {
+
+  color orange #E76F2C
+  color ink    #2A2622
+  color paper  #B8AFA3
+
+  element person {
+    style {
+      shape person
+      color orange
+    }
+  }
+
+  element system {
+    style {
+      color ink
+    }
+  }
+
+  element external {
+    style {
+      color paper
+      shape rectangle
+    }
+  }
+
+  element container
+  element database {
+    style {
+      shape storage
+    }
+  }
+  element component
+
+  // Tags that carry meaning, not decoration. OVERVIEW.md is the authority on what is
+  // built; if it and this model disagree, OVERVIEW wins.
+  tag parked        // exists in the repo, does not work today
+  tag notbuilt      // a stub or workspace member with essentially no implementation
+  tag devonly       // development only, no production counterpart
+
+  // Deployment node kinds, used by deployment.c4
+  deploymentNode host
+  deploymentNode vm
+  deploymentNode proc
+}
